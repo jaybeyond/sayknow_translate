@@ -103,12 +103,15 @@
   }
 }
 
-.popover-root {
+/* Inner layer — only the CONTENT fades/slides in. The outer shell with the
+ * frosted bg is always rendered immediately so the user never sees a frame of
+ * transparent window without the popover skin. */
+.popover-content {
   opacity: 0;
   transform: translateY(-6px) scale(0.98);
   transform-origin: top center;
   will-change: opacity, transform;
 }
-.popover-root.appear {
+.popover-content.appear {
   animation: sayknow-popover-in 180ms cubic-bezier(0.2, 0.85, 0.4, 1) forwards;
 }
