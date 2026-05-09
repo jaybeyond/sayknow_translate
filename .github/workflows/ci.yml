@@ -1,0 +1,56 @@
+name: CI
+
+# Sanity-check that the app still builds on every push to main / PR.
+# Lighter than release.yml — no artifact upload, no Release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-14
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: ci-${{ matrix.target }}
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check + frontend build
+        run: pnpm build
+
+      - name: Tauri build (no bundle)
+        run: pnpm tauri build --no-bundle ${{ matrix.args }}
