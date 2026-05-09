@@ -1,5 +1,7 @@
-import { History as HistoryIcon, Trash2, X } from "lucide-react"
+import { useMemo, useState } from "react"
+import { History as HistoryIcon, Pin, PinOff, Search, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Popover,
   PopoverContent,
@@ -7,15 +9,40 @@ import {
 } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { timeAgo, type HistoryEntry } from "@/lib/history"
+import { cn } from "@/lib/utils"
+import { useT, type UILocaleSetting } from "@/i18n"
 
 type Props = {
   entries: HistoryEntry[]
   onRestore: (e: HistoryEntry) => void
   onRemove: (id: string) => void
+  onTogglePin: (id: string) => void
   onClear: () => void
+  uiLocale: UILocaleSetting
 }
 
-export function HistoryMenu({ entries, onRestore, onRemove, onClear }: Props) {
+export function HistoryMenu({
+  entries,
+  onRestore,
+  onRemove,
+  onTogglePin,
+  onClear,
+  uiLocale,
+}: Props) {
+  const { t } = useT(uiLocale)
+  const [q, setQ] = useState("")
+
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    if (!t) return entries
+    return entries.filter(
+      (e) =>
+        e.source.toLowerCase().includes(t) ||
+        e.target.toLowerCase().includes(t) ||
+        e.model.toLowerCase().includes(t),
+    )
+  }, [entries, q])
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -23,7 +50,7 @@ export function HistoryMenu({ entries, onRestore, onRemove, onClear }: Props) {
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          aria-label="번역 기록"
+          aria-label={t("header.history")}
         >
           <HistoryIcon className="h-3.5 w-3.5" />
         </Button>
@@ -31,66 +58,91 @@ export function HistoryMenu({ entries, onRestore, onRemove, onClear }: Props) {
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-[360px] p-0"
+        className="w-[400px] p-0"
       >
-        <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-medium">최근 번역</span>
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t("history.search")}
+              className="h-7 pl-6 text-xs"
+            />
+          </div>
           {entries.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+              className="h-7 px-2 text-[10px] text-muted-foreground hover:text-destructive"
               onClick={onClear}
+              title={t("history.clearTooltip")}
             >
               <Trash2 className="h-3 w-3" />
-              전체 삭제
+              {t("history.clear")}
             </Button>
           )}
         </div>
         <Separator />
         <div className="max-h-[360px] overflow-y-auto">
-          {entries.length === 0 ? (
+          {filtered.length === 0 ? (
             <div className="px-3 py-8 text-center text-[11px] text-muted-foreground">
-              아직 번역 기록이 없어요
+              {q ? t("history.noResult") : t("history.empty")}
             </div>
           ) : (
-            entries.map((e) => (
-              <button
+            filtered.map((e) => (
+              <div
                 key={e.id}
-                type="button"
-                onClick={() => onRestore(e)}
-                className="group relative flex w-full flex-col gap-0.5 border-b px-3 py-2 text-left text-xs hover:bg-accent/40 last:border-b-0"
+                className={cn(
+                  "group relative border-b text-left text-xs hover:bg-accent/40 last:border-b-0",
+                  e.pinned && "bg-accent/20",
+                )}
               >
-                <div className="line-clamp-1 text-foreground">
-                  {e.source}
-                </div>
-                <div className="line-clamp-1 text-muted-foreground">
-                  → {e.target}
-                </div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span>{timeAgo(e.ts)}</span>
-                  <span>·</span>
-                  <span className="truncate">{e.model}</span>
-                </div>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(ev) => {
-                    ev.stopPropagation()
-                    onRemove(e.id)
-                  }}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
+                <button
+                  type="button"
+                  onClick={() => onRestore(e)}
+                  className="flex w-full flex-col gap-0.5 px-3 py-2 pr-14 text-left"
+                >
+                  <div className="line-clamp-1 text-foreground">{e.source}</div>
+                  <div className="line-clamp-1 text-muted-foreground">
+                    → {e.target}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    {e.pinned && <Pin className="h-2.5 w-2.5 text-foreground/70" />}
+                    <span>{timeAgo(e.ts)}</span>
+                    <span>·</span>
+                    <span className="truncate">{e.model}</span>
+                  </div>
+                </button>
+                <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      onTogglePin(e.id)
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                    aria-label={e.pinned ? t("history.unpin") : t("history.pin")}
+                  >
+                    {e.pinned ? (
+                      <PinOff className="h-3 w-3" />
+                    ) : (
+                      <Pin className="h-3 w-3" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(ev) => {
                       ev.stopPropagation()
                       onRemove(e.id)
-                    }
-                  }}
-                  className="absolute right-2 top-2 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground group-hover:opacity-100"
-                  aria-label="삭제"
-                >
-                  <X className="h-3 w-3" />
-                </span>
-              </button>
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive"
+                    aria-label={t("history.delete")}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
             ))
           )}
         </div>

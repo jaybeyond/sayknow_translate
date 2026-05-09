@@ -23,4 +23,6 @@ tauri = { version = "2.11.1", features = ["tray-icon", "image-png", "macos-priva
 tauri-plugin-log = "2"
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-opener = "2"
 keyring = { version = "3", features = ["apple-native"] }

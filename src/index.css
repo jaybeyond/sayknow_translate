@@ -84,6 +84,12 @@
     margin: 0;
     overflow: hidden;
   }
+  /* Settings window is a standard decorated window — give it a solid bg. */
+  html.settings-window,
+  html.settings-window body,
+  html.settings-window #root {
+    @apply bg-background;
+  }
 }
 
 @keyframes sayknow-popover-in {

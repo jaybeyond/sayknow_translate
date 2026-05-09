@@ -5,25 +5,19 @@ import {
   Copy,
   CornerDownLeft,
   Loader2,
-  LogOut,
-  Monitor,
-  Moon,
+  Pin,
+  PinOff,
   Settings as SettingsIcon,
   Sparkles,
-  Sun,
   X,
   Zap,
   ZapOff,
 } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
+import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import {
   Popover,
@@ -31,45 +25,44 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
-import { ModelPicker } from "./ModelPicker"
+import { Switch } from "@/components/ui/switch"
+import { LangPicker } from "./LangPicker"
 import { HistoryMenu } from "./HistoryMenu"
 import { useDebounce } from "@/hooks/useDebounce"
 import { useModels } from "@/hooks/useModels"
 import { useHistory } from "@/hooks/useHistory"
+import { useUsage } from "@/hooks/useUsage"
 import type { Settings } from "@/hooks/useSettings"
 import type { ThemeMode } from "@/hooks/useTheme"
+import { isTauri } from "@/lib/runtime"
 import type { HistoryEntry } from "@/lib/history"
 import {
   buildRefinePrompt,
   buildTranslatePrompt,
   chat,
   LANGS,
-  type LangCode,
 } from "@/lib/openrouter"
+import { useT } from "@/i18n"
 
 const REFINE_PRESETS = [
-  { id: "polite", label: "정중히", instruction: "Make it more polite and formal." },
-  { id: "casual", label: "캐주얼", instruction: "Make it more casual and friendly." },
-  { id: "shorter", label: "짧게", instruction: "Make it shorter and more concise." },
-  { id: "business", label: "비즈니스", instruction: "Use a professional business email tone." },
-  { id: "literal", label: "직역", instruction: "Make it more literal." },
+  { id: "polite", labelKey: "refine.polite", instruction: "Make it more polite and formal." },
+  { id: "casual", labelKey: "refine.casual", instruction: "Make it more casual and friendly." },
+  { id: "shorter", labelKey: "refine.shorter", instruction: "Make it shorter and more concise." },
+  { id: "business", labelKey: "refine.business", instruction: "Use a professional business email tone." },
+  { id: "literal", labelKey: "refine.literal", instruction: "Make it more literal." },
 ] as const
 
 type Props = {
   settings: Settings
   update: (patch: Partial<Settings>) => void
-  onLogout: () => void
-  themeMode: ThemeMode
-  setThemeMode: (m: ThemeMode) => void
+  // Kept for symmetry with login flow; unused inside main popover after settings split.
+  onLogout?: () => void
+  themeMode?: ThemeMode
+  setThemeMode?: (m: ThemeMode) => void
 }
 
-export function TranslatePanel({
-  settings,
-  update,
-  onLogout,
-  themeMode,
-  setThemeMode,
-}: Props) {
+export function TranslatePanel({ settings, update }: Props) {
+  const { t } = useT(settings.uiLocale)
   const [input, setInput] = useState("")
   const [output, setOutput] = useState("")
   const [translating, setTranslating] = useState(false)
@@ -78,11 +71,40 @@ export function TranslatePanel({
   const [error, setError] = useState<string | null>(null)
   const [refineText, setRefineText] = useState("")
   const abortRef = useRef<AbortController | null>(null)
-  const { models, loading: modelsLoading } = useModels(settings.apiKey)
-  const { entries: historyEntries, add: addHistory, remove: removeHistory, clear: clearHistory } =
-    useHistory()
+  const { models } = useModels(settings.apiKey)
+  const {
+    entries: historyEntries,
+    add: addHistory,
+    remove: removeHistory,
+    togglePin: toggleHistoryPin,
+    clear: clearHistory,
+  } = useHistory()
+  const { record: recordUsage } = useUsage()
 
   const debounced = useDebounce(input, 1500)
+
+  useEffect(() => {
+    if (!isTauri()) return
+    void invoke("set_pinned", { pinned: settings.pinned }).catch(() => {})
+  }, [settings.pinned])
+
+  useEffect(() => {
+    if (!isTauri()) return
+    const unlisten = listen<string>("sayknow:open", async (event) => {
+      if (event.payload !== "shortcut" || !settings.clipboardOnHotkey) return
+      try {
+        const text = (await readClipboardText())?.trim() ?? ""
+        if (text && text !== input.trim()) {
+          setInput(text)
+        }
+      } catch {
+        /* clipboard empty or denied */
+      }
+    })
+    return () => {
+      void unlisten.then((fn) => fn())
+    }
+  }, [settings.clipboardOnHotkey, input])
 
   function runTranslate(text: string) {
     const trimmed = text.trim()
@@ -97,7 +119,16 @@ export function TranslatePanel({
       apiKey: settings.apiKey,
       model: settings.model,
       fallbackModel: settings.fallbackModel,
-      messages: buildTranslatePrompt(trimmed, settings.from, settings.to),
+      messages: buildTranslatePrompt(
+        trimmed,
+        settings.from,
+        settings.to,
+        settings.glossary,
+        {
+          translate: settings.customTranslatePrompt,
+          refine: settings.customRefinePrompt,
+        },
+      ),
       signal: ctrl.signal,
     })
       .then((result) => {
@@ -110,6 +141,14 @@ export function TranslatePanel({
           to: settings.to,
           model: result.model,
         })
+        if (result.usage) {
+          recordUsage({
+            modelId: result.model,
+            models,
+            promptTokens: result.usage.prompt_tokens ?? 0,
+            completionTokens: result.usage.completion_tokens ?? 0,
+          })
+        }
       })
       .catch((e) => {
         if (ctrl.signal.aborted) return
@@ -126,7 +165,6 @@ export function TranslatePanel({
     setRefining(false)
   }
 
-  // Auto translate (when enabled): fires after 1.5s of typing inactivity.
   useEffect(() => {
     if (!settings.autoTranslate) return
     const text = debounced.trim()
@@ -147,7 +185,6 @@ export function TranslatePanel({
     settings.to,
   ])
 
-  // Clear stale output when user wipes input (manual mode too).
   useEffect(() => {
     if (input.trim().length < 2) {
       setOutput("")
@@ -186,7 +223,17 @@ export function TranslatePanel({
         apiKey: settings.apiKey,
         model: settings.model,
         fallbackModel: settings.fallbackModel,
-        messages: buildRefinePrompt(input, output, settings.to, instruction),
+        messages: buildRefinePrompt(
+          input,
+          output,
+          settings.to,
+          instruction,
+          settings.glossary,
+          {
+            translate: settings.customTranslatePrompt,
+            refine: settings.customRefinePrompt,
+          },
+        ),
         signal: ctrl.signal,
       })
       if (ctrl.signal.aborted) return
@@ -198,12 +245,27 @@ export function TranslatePanel({
         to: settings.to,
         model: result.model,
       })
+      if (result.usage) {
+        recordUsage({
+          modelId: result.model,
+          models,
+          promptTokens: result.usage.prompt_tokens ?? 0,
+          completionTokens: result.usage.completion_tokens ?? 0,
+        })
+      }
     } catch (e) {
       if (ctrl.signal.aborted) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       if (!ctrl.signal.aborted) setRefining(false)
     }
+  }
+
+  function handleFreeRefine() {
+    const t = refineText.trim()
+    if (!t) return
+    refine(t)
+    setRefineText("")
   }
 
   function restoreHistory(e: HistoryEntry) {
@@ -214,27 +276,20 @@ export function TranslatePanel({
     update({ from: e.from, to: e.to })
   }
 
-  function handleFreeRefine() {
-    const t = refineText.trim()
-    if (!t) return
-    refine(t)
-    setRefineText("")
-  }
-
   const targetLang =
     LANGS.find((l) => l.code === settings.to)?.label ?? settings.to
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header — slim language bar */}
       <div
         className="flex items-center gap-1 border-b bg-muted/30 px-2 py-1.5"
         data-tauri-drag-region
       >
-        <LangSelect
+        <LangPicker
           value={settings.from}
           onChange={(v) => update({ from: v })}
           showAuto
+          uiLocale={settings.uiLocale}
         />
         <Button
           variant="ghost"
@@ -242,34 +297,42 @@ export function TranslatePanel({
           className="h-6 w-6 shrink-0"
           onClick={swap}
           disabled={settings.from === "auto"}
-          aria-label="언어 스왑"
+          aria-label={t("header.swap")}
         >
           <ArrowLeftRight className="h-3 w-3" />
         </Button>
-        <LangSelect
+        <LangPicker
           value={settings.to}
           onChange={(v) => update({ to: v })}
+          uiLocale={settings.uiLocale}
         />
         <div className="ml-auto flex items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => update({ pinned: !settings.pinned })}
+            aria-label={settings.pinned ? t("header.unpin") : t("header.pin")}
+            title={settings.pinned ? t("header.pinned") : t("header.pin")}
+          >
+            {settings.pinned ? (
+              <Pin className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <PinOff className="h-3.5 w-3.5" />
+            )}
+          </Button>
           <HistoryMenu
             entries={historyEntries}
             onRestore={restoreHistory}
             onRemove={removeHistory}
+            onTogglePin={toggleHistoryPin}
             onClear={clearHistory}
+            uiLocale={settings.uiLocale}
           />
-          <SettingsMenu
-            settings={settings}
-            update={update}
-            onLogout={onLogout}
-            themeMode={themeMode}
-            setThemeMode={setThemeMode}
-            models={models}
-            modelsLoading={modelsLoading}
-          />
+          <QuickMenu settings={settings} update={update} />
         </div>
       </div>
 
-      {/* Input section */}
       <div className="px-3 pt-3">
         <Textarea
           value={input}
@@ -282,15 +345,14 @@ export function TranslatePanel({
           }}
           placeholder={
             settings.autoTranslate
-              ? "번역할 텍스트를 입력하세요"
-              : "텍스트 입력 후 ⌘⏎ 또는 번역 버튼"
+              ? t("input.placeholderAuto")
+              : t("input.placeholderManual")
           }
           autoFocus
           className="min-h-[140px] resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-relaxed shadow-none transition-none placeholder:text-muted-foreground/70 focus-visible:border-0 focus-visible:shadow-none focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
         />
       </div>
 
-      {/* Divider with language label + stop button while translating */}
       <div className="flex items-center gap-2 px-3 pb-1.5 pt-1">
         <Separator className="flex-1" />
         {translating || refining ? (
@@ -298,12 +360,12 @@ export function TranslatePanel({
             type="button"
             onClick={stopTranslate}
             className="group inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:border-destructive/60 hover:text-destructive"
-            aria-label="정지"
+            aria-label={t("stop")}
           >
             <Loader2 className="h-2.5 w-2.5 animate-spin group-hover:hidden" />
             <X className="hidden h-2.5 w-2.5 group-hover:inline" />
             <span>{targetLang}</span>
-            <span className="hidden text-destructive group-hover:inline">정지</span>
+            <span className="hidden text-destructive group-hover:inline">{t("stop")}</span>
           </button>
         ) : (
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -313,7 +375,6 @@ export function TranslatePanel({
         <Separator className="flex-1" />
       </div>
 
-      {/* Output section */}
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         <div
           className="min-h-[120px] whitespace-pre-wrap text-[14px] leading-relaxed"
@@ -322,22 +383,19 @@ export function TranslatePanel({
           {output ? (
             output
           ) : translating ? (
-            <span className="text-muted-foreground">번역 중...</span>
+            <span className="text-muted-foreground">{t("output.translating")}</span>
           ) : input.trim().length < 2 ? (
             <span className="text-muted-foreground">
               {settings.autoTranslate
-                ? "타이핑하면 자동으로 번역돼요"
-                : "텍스트 입력 후 ⌘⏎ 또는 아래 번역 버튼"}
+                ? t("output.emptyAuto")
+                : t("output.emptyManual")}
             </span>
           ) : !settings.autoTranslate ? (
-            <span className="text-muted-foreground">
-              ⌘⏎ 또는 번역 버튼을 누르세요
-            </span>
+            <span className="text-muted-foreground">{t("output.waitManual")}</span>
           ) : null}
         </div>
       </div>
 
-      {/* Action bar */}
       <div className="border-t bg-muted/20 px-2 py-1.5">
         <div className="flex flex-wrap items-center gap-1">
           {!settings.autoTranslate && (
@@ -353,7 +411,7 @@ export function TranslatePanel({
               ) : (
                 <CornerDownLeft className="h-3 w-3" />
               )}
-              번역
+              {t("translate")}
             </Button>
           )}
           {REFINE_PRESETS.map((p) => (
@@ -365,7 +423,7 @@ export function TranslatePanel({
               disabled={!output || refining}
               onClick={() => refine(p.instruction)}
             >
-              {p.label}
+              {t(p.labelKey)}
             </Button>
           ))}
           <div className="ml-auto flex items-center gap-0.5">
@@ -376,7 +434,7 @@ export function TranslatePanel({
                   variant="ghost"
                   className="h-7 w-7"
                   disabled={!output || refining}
-                  aria-label="직접 지시"
+                  aria-label={t("freePrompt")}
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                 </Button>
@@ -386,11 +444,11 @@ export function TranslatePanel({
                 className="w-72 p-2.5"
                 sideOffset={6}
               >
-                <Label className="text-[11px]">직접 지시</Label>
+                <Label className="text-[11px]">{t("freePrompt")}</Label>
                 <Textarea
                   value={refineText}
                   onChange={(e) => setRefineText(e.target.value)}
-                  placeholder="예: 좀 더 다정한 어조로"
+                  placeholder={t("freePrompt.placeholder")}
                   className="mt-1.5 min-h-[60px] text-xs"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -408,7 +466,7 @@ export function TranslatePanel({
                   {refining ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
-                    "적용"
+                    t("freePrompt.apply")
                   )}
                 </Button>
               </PopoverContent>
@@ -419,7 +477,7 @@ export function TranslatePanel({
               className="h-7 w-7"
               onClick={handleCopy}
               disabled={!output}
-              aria-label="복사"
+              aria-label={t("copy")}
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5 text-emerald-500" />
@@ -436,7 +494,7 @@ export function TranslatePanel({
           <span className="flex-1">{error}</span>
           <button
             onClick={() => setError(null)}
-            aria-label="닫기"
+            aria-label={t("common.close")}
             className="shrink-0 hover:opacity-80"
           >
             <X className="h-3 w-3" />
@@ -447,73 +505,43 @@ export function TranslatePanel({
   )
 }
 
-function LangSelect({
-  value,
-  onChange,
-  showAuto,
-}: {
-  value: LangCode
-  onChange: (v: LangCode) => void
-  showAuto?: boolean
-}) {
-  return (
-    <Select value={value} onValueChange={(v) => onChange(v as LangCode)}>
-      <SelectTrigger
-        size="sm"
-        className="h-7 w-[100px] border-none bg-transparent text-xs hover:bg-background data-[state=open]:bg-background"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {LANGS.filter((l) => showAuto || l.code !== "auto").map((l) => (
-          <SelectItem key={l.code} value={l.code} className="text-xs">
-            {l.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-const THEME_OPTIONS = [
-  { value: "system", icon: Monitor, label: "시스템" },
-  { value: "light", icon: Sun, label: "라이트" },
-  { value: "dark", icon: Moon, label: "다크" },
-] as const
-
-function SettingsMenu({
+function QuickMenu({
   settings,
   update,
-  onLogout,
-  themeMode,
-  setThemeMode,
-  models,
-  modelsLoading,
 }: {
   settings: Settings
   update: (patch: Partial<Settings>) => void
-  onLogout: () => void
-  themeMode: ThemeMode
-  setThemeMode: (m: ThemeMode) => void
-  models: import("@/lib/openrouter").OpenRouterModel[]
-  modelsLoading: boolean
 }) {
+  const { t } = useT(settings.uiLocale)
+  const [open, setOpen] = useState(false)
+
+  async function openSettings() {
+    setOpen(false)
+    if (isTauri()) {
+      try {
+        await invoke("open_settings")
+      } catch (e) {
+        console.error("open_settings failed:", e)
+      }
+    }
+  }
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
           className="h-7 w-7"
-          aria-label="설정"
+          aria-label={t("header.settings")}
         >
           <SettingsIcon className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} className="w-80 p-3">
+      <PopoverContent align="end" sideOffset={6} className="w-[260px] p-3">
         <div className="space-y-3">
           <div>
-            <Label className="text-[11px]">번역 모드</Label>
+            <Label className="text-[11px]">{t("settings.mode")}</Label>
             <div className="mt-1.5 grid grid-cols-2 gap-1">
               <Button
                 size="sm"
@@ -522,7 +550,7 @@ function SettingsMenu({
                 onClick={() => update({ autoTranslate: true })}
               >
                 <Zap className="h-3 w-3" />
-                자동 (1.5s)
+                {t("settings.mode.auto")}
               </Button>
               <Button
                 size="sm"
@@ -531,96 +559,34 @@ function SettingsMenu({
                 onClick={() => update({ autoTranslate: false })}
               >
                 <ZapOff className="h-3 w-3" />
-                수동 (⌘⏎)
+                {t("settings.mode.manual")}
               </Button>
             </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              {settings.autoTranslate
-                ? "타이핑이 멈추면 1.5초 후 자동 호출"
-                : "⌘⏎ 또는 번역 버튼 누를 때만 호출 — 비용 절약"}
-            </p>
           </div>
 
           <Separator />
 
-          <div>
-            <Label className="text-[11px]">기본 모델</Label>
-            <div className="mt-1.5">
-              <ModelPicker
-                value={settings.model}
-                onChange={(id) => update({ model: id })}
-                models={models}
-                loading={modelsLoading}
-              />
-            </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              {models.length > 0
-                ? `${models.length}개 모델 사용 가능 · OpenRouter`
-                : "API 키로 모델 목록을 불러오는 중..."}
-            </p>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between">
-              <Label className="text-[11px]">폴백 모델 (선택)</Label>
-              {settings.fallbackModel && (
-                <button
-                  type="button"
-                  onClick={() => update({ fallbackModel: "" })}
-                  className="text-[10px] text-muted-foreground hover:text-foreground"
-                >
-                  지우기
-                </button>
-              )}
-            </div>
-            <div className="mt-1.5">
-              <ModelPicker
-                value={settings.fallbackModel}
-                onChange={(id) => update({ fallbackModel: id })}
-                models={models}
-                loading={modelsLoading}
-                placeholder="폴백 없음"
-              />
-            </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              기본 모델 실패(rate limit / 다운) 시 OpenRouter가 자동으로 이 모델로 재시도
-            </p>
-          </div>
-
-          <Separator />
-
-          <div>
-            <Label className="text-[11px]">테마</Label>
-            <div className="mt-1.5 grid grid-cols-3 gap-1">
-              {THEME_OPTIONS.map((t) => {
-                const Icon = t.icon
-                const active = themeMode === t.value
-                return (
-                  <Button
-                    key={t.value}
-                    size="sm"
-                    variant={active ? "secondary" : "ghost"}
-                    className="h-8 text-[11px]"
-                    onClick={() => setThemeMode(t.value)}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {t.label}
-                  </Button>
-                )
-              })}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="qm-clipboard" className="text-[11px]">
+              {t("settings.clipboard.title")}
+            </Label>
+            <Switch
+              id="qm-clipboard"
+              checked={settings.clipboardOnHotkey}
+              onCheckedChange={(v) => update({ clipboardOnHotkey: v })}
+            />
           </div>
 
           <Separator />
 
           <Button
-            variant="ghost"
+            variant="default"
             size="sm"
-            className="w-full justify-start text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={onLogout}
+            className="w-full text-xs"
+            onClick={openSettings}
           >
-            <LogOut className="h-3.5 w-3.5" />
-            로그아웃 (키 삭제)
+            <SettingsIcon className="h-3 w-3" />
+            {t("settings.openButton")}
           </Button>
         </div>
       </PopoverContent>

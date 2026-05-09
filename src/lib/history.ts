@@ -9,22 +9,31 @@ export type HistoryEntry = {
   from: LangCode
   to: LangCode
   model: string
+  pinned?: boolean
 }
 
 const KEY = "history"
-const MAX = 50
+const MAX_UNPINNED = 50
+
+function sortPinnedFirst(list: HistoryEntry[]): HistoryEntry[] {
+  // Stable: pinned first (newest pinned at top), then unpinned by recency.
+  return [...list].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+    return b.ts - a.ts
+  })
+}
 
 export const history = {
   list(): HistoryEntry[] {
-    return storage.get<HistoryEntry[]>(KEY) ?? []
+    return sortPinnedFirst(storage.get<HistoryEntry[]>(KEY) ?? [])
   },
-  add(entry: Omit<HistoryEntry, "id" | "ts">) {
+  add(entry: Omit<HistoryEntry, "id" | "ts" | "pinned">) {
     const trimmed = entry.source.trim()
     if (!trimmed || !entry.target.trim()) return
     const prev = history.list()
-    // Skip exact duplicate of the most recent entry.
     if (
       prev[0] &&
+      !prev[0].pinned &&
       prev[0].source === entry.source &&
       prev[0].target === entry.target &&
       prev[0].from === entry.from &&
@@ -36,11 +45,26 @@ export const history = {
       ...entry,
       id: crypto.randomUUID(),
       ts: Date.now(),
+      pinned: false,
     }
-    storage.set(KEY, [next, ...prev].slice(0, MAX))
+    const combined = [next, ...prev]
+    // Cap only the unpinned subset.
+    const pinned = combined.filter((e) => e.pinned)
+    const unpinned = combined.filter((e) => !e.pinned).slice(0, MAX_UNPINNED)
+    storage.set(KEY, [...pinned, ...unpinned])
+  },
+  togglePin(id: string) {
+    const list = history.list()
+    storage.set(
+      KEY,
+      list.map((e) => (e.id === id ? { ...e, pinned: !e.pinned } : e)),
+    )
   },
   clear() {
-    storage.remove(KEY)
+    // Pin'd 항목은 보존. 사용자 의도 보호.
+    const pinned = history.list().filter((e) => e.pinned)
+    if (pinned.length > 0) storage.set(KEY, pinned)
+    else storage.remove(KEY)
   },
   remove(id: string) {
     storage.set(

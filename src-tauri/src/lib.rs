@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -7,10 +7,17 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    ActivationPolicy, AppHandle, Manager,
+    ActivationPolicy, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri::Emitter;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_positioner::{Position, WindowExt};
+
+/// Global state shared between Rust handlers and JS via Tauri commands/events.
+struct AppState {
+    pinned: AtomicBool,
+}
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -57,7 +64,45 @@ fn hide_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn toggle_window(app: &AppHandle, shown_at: &Arc<AtomicI64>) {
+#[tauri::command]
+fn set_pinned(state: tauri::State<AppState>, pinned: bool) {
+    state.pinned.store(pinned, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn open_external(app: AppHandle, url: String) -> Result<(), String> {
+    // Only allow http(s) URLs — no file://, no scheme injection.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("only http(s) URLs are allowed".into())
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("settings") {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        let _ = existing.unminimize();
+        return Ok(())
+    }
+    WebviewWindowBuilder::new(
+        &app,
+        "settings",
+        WebviewUrl::App("index.html?window=settings".into()),
+    )
+    .title("SayKnow")
+    .inner_size(820.0, 580.0)
+    .min_inner_size(720.0, 500.0)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn toggle_window(app: &AppHandle, shown_at: &Arc<AtomicI64>, source: &str) {
     if let Some(win) = app.get_webview_window("main") {
         let visible = win.is_visible().unwrap_or(false);
         if visible {
@@ -67,6 +112,8 @@ fn toggle_window(app: &AppHandle, shown_at: &Arc<AtomicI64>) {
             shown_at.store(now_ms(), Ordering::Relaxed);
             let _ = win.show();
             let _ = win.set_focus();
+            // JS listens for this — used to auto-fill clipboard on shortcut open.
+            let _ = app.emit("sayknow:open", source);
         }
     }
 }
@@ -76,11 +123,19 @@ pub fn run() {
     eprintln!("[sayknow] run() called");
     tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(AppState {
+            pinned: AtomicBool::new(false),
+        })
         .invoke_handler(tauri::generate_handler![
             get_api_key,
             set_api_key,
             delete_api_key,
-            hide_window
+            hide_window,
+            set_pinned,
+            open_settings,
+            open_external
         ])
         .setup(|app| {
             eprintln!("[sayknow] setup hook entered");
@@ -112,7 +167,7 @@ pub fn run() {
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, sc, ev| {
                         if sc == &shortcut_for_handler && ev.state() == ShortcutState::Pressed {
-                            toggle_window(app, &shown_at_for_shortcut);
+                            toggle_window(app, &shown_at_for_shortcut, "shortcut");
                         }
                     })
                     .build(),
@@ -146,7 +201,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        toggle_window(tray.app_handle(), &shown_at_for_tray);
+                        toggle_window(tray.app_handle(), &shown_at_for_tray, "tray");
                     }
                 })
                 .build(app)?;
@@ -158,8 +213,17 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 let win_clone = win.clone();
                 let shown_at_for_blur = shown_at.clone();
+                let app_handle_for_blur = app.handle().clone();
                 win.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
+                        // Honor user's pin: never hide while pinned.
+                        if app_handle_for_blur
+                            .state::<AppState>()
+                            .pinned
+                            .load(Ordering::Relaxed)
+                        {
+                            return
+                        }
                         let since = now_ms() - shown_at_for_blur.load(Ordering::Relaxed);
                         if since > 400 {
                             let _ = win_clone.hide();

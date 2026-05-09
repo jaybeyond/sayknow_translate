@@ -8,6 +8,10 @@
     <script>
       (function () {
         try {
+          var params = new URLSearchParams(window.location.search);
+          if (params.get("window") === "settings") {
+            document.documentElement.classList.add("settings-window");
+          }
           var saved = localStorage.getItem("sayknow:theme");
           var mode = saved || "system";
           var dark =

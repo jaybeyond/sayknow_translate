@@ -4,25 +4,32 @@ import { useSettings } from "./hooks/useSettings"
 import { useTheme } from "./hooks/useTheme"
 import { LoginPanel } from "./components/LoginPanel"
 import { TranslatePanel } from "./components/TranslatePanel"
+import { SettingsWindow } from "./components/SettingsWindow"
+
+function isSettingsWindow(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("window") === "settings"
+}
 
 function App() {
+  if (isSettingsWindow()) return <SettingsRoot />
+  return <MainRoot />
+}
+
+function MainRoot() {
   const { settings, update, clearKey, isLoggedIn, loaded } = useSettings()
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // Replay enter animation each time the menubar window becomes visible.
   useEffect(() => {
     function play() {
       const el = rootRef.current
       if (!el) return
       el.classList.remove("appear")
-      // Force reflow so the animation restarts.
       void el.offsetWidth
       el.classList.add("appear")
     }
     function reset() {
-      // On blur the Tauri window is about to hide. Drop the appear class so
-      // the next show() begins from the hidden start state, not the end state.
       rootRef.current?.classList.remove("appear")
     }
     play()
@@ -52,9 +59,32 @@ function App() {
           setThemeMode={setThemeMode}
         />
       ) : (
-        <LoginPanel update={update} />
+        <LoginPanel update={update} uiLocale={settings.uiLocale} />
       )}
     </div>
+  )
+}
+
+function SettingsRoot() {
+  const { settings, update, clearKey, loaded } = useSettings()
+  const { mode: themeMode, setMode: setThemeMode } = useTheme()
+
+  if (!loaded) {
+    return (
+      <div className="flex h-svh items-center justify-center bg-background">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return (
+    <SettingsWindow
+      settings={settings}
+      update={update}
+      onLogout={clearKey}
+      themeMode={themeMode}
+      setThemeMode={setThemeMode}
+    />
   )
 }
 

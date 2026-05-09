@@ -29,5 +29,16 @@ export function useTheme() {
     return () => mq.removeEventListener("change", onChange)
   }, [mode])
 
+  // Cross-window: when the other window writes the theme key, mirror it here.
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== "sayknow:" + KEY) return
+      const next = (storage.get<ThemeMode>(KEY) ?? "system") as ThemeMode
+      setMode(next)
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
+
   return { mode, setMode }
 }
