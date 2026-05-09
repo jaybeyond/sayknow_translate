@@ -7,9 +7,11 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    ActivationPolicy, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri::Emitter;
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_positioner::{Position, WindowExt};
@@ -156,9 +158,15 @@ pub fn run() {
             // the brief blur that fires while the window is being raised.
             let shown_at: Arc<AtomicI64> = Arc::new(AtomicI64::new(0));
 
-            // Global shortcut ⌘⇧T (macOS) / ⌃⇧T (others) — toggle window.
+            // Global shortcut: ⌘⇧T on macOS, Ctrl+Shift+T elsewhere.
+            // SUPER on Windows = Win key, which collides with system shortcuts,
+            // so we deliberately route to CONTROL on non-Apple platforms.
+            #[cfg(target_os = "macos")]
+            let primary_modifier = Modifiers::SUPER;
+            #[cfg(not(target_os = "macos"))]
+            let primary_modifier = Modifiers::CONTROL;
             let shortcut = Shortcut::new(
-                Some(Modifiers::SUPER | Modifiers::SHIFT),
+                Some(primary_modifier | Modifiers::SHIFT),
                 Code::KeyT,
             );
             let shortcut_for_handler = shortcut;
