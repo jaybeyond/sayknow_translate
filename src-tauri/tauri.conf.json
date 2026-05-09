@@ -35,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "AI translator in your menu bar",
     "longDescription": "SayKnow is a menu bar AI translator powered by OpenRouter. Type to translate instantly.",
