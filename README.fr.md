@@ -1,0 +1,104 @@
+<div align="center">
+
+# SayKnow
+
+**Traducteur IA dans la barre de menu — traduit pendant que vous tapez.**
+
+`say` (dire) + `know` (savoir) — dites-le, il comprendra.
+
+[한국어](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [中文](README.zh.md) · [Español](README.es.md) · **Français** · [Deutsch](README.de.md) · [Tiếng Việt](README.vi.md)
+
+[![macOS](https://img.shields.io/badge/macOS-11.0%2B-black?logo=apple)](https://www.apple.com/macos/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## Aperçu
+
+SayKnow vit dans la **barre de menu macOS**. Un raccourci ouvre une petite fenêtre ; arrêtez de taper et la traduction s'affiche. Plus besoin de jongler entre onglets et copier-coller.
+
+Architecture **OpenRouter BYOK** (Bring Your Own Key) — une seule clé pour accéder à **tous les modèles** supportés par OpenRouter (360+, dont GPT-4o, Claude, Gemini, Llama, ...).
+
+## Fonctionnalités
+
+- ⚡ **Traduction automatique** — 1,5 s après l'arrêt de la frappe
+- ⌨️ **Mode manuel** — seulement sur `⌘⏎` ou le bouton (économise les tokens)
+- 🪄 **Affiner** — Formel / Décontracté / Plus court / Pro / Littéral + prompt libre
+- 🌐 **OpenRouter BYOK** — recherche dans 360+ modèles
+- 🔁 **Modèle de secours** — OpenRouter bascule si le principal échoue
+- ⏹ **Arrêter** — annule un appel en cours
+- 📋 **Coller automatique** — `⌘⇧T` remplit l'entrée depuis le presse-papiers
+- 🕘 **Historique** — recherche, épingler des entrées
+- 📌 **Épingler la fenêtre** — désactive l'auto-masquage
+- 📚 **Glossaire** — traductions cohérentes pour les noms propres
+- ✏️ **Prompt système personnalisable**
+- 💰 **Suivi de l'usage** — tokens et coût quotidien/mensuel
+- 🌓 **Clair / sombre / système**
+- 🌍 **8 langues d'interface** — détection auto
+- 🔄 **36 langues de traduction**
+- 🔒 **macOS Keychain** — clé API chiffrée AES-256
+
+## Prérequis
+
+- macOS 11.0 (Big Sur) ou plus récent
+- Apple Silicon (aarch64)
+- Clé API OpenRouter — [openrouter.ai/keys](https://openrouter.ai/keys)
+
+## Installation
+
+### Option 1 — DMG (recommandé)
+
+1. Téléchargez `SayKnow_x.x.x_aarch64.dmg` depuis [Releases](https://github.com/jaybeyond/sayknow_translate/releases).
+2. Ouvrez le DMG, glissez SayKnow.app dans `/Applications`.
+3. Build non signée, Gatekeeper bloquera au premier lancement :
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SayKnow.app
+   ```
+
+### Option 2 — Build depuis les sources
+
+```bash
+git clone https://github.com/jaybeyond/sayknow_translate.git
+cd sayknow_translate
+pnpm install
+pnpm tauri build
+```
+
+## Utilisation
+
+1. Une petite icône apparaît dans la barre de menu (à côté de l'horloge). Pas dans le Dock.
+2. Clic sur l'icône → entrez la clé OpenRouter → **Connecter & démarrer**.
+3. La clé est sauvée dans macOS Keychain.
+4. Clic sur l'icône ou `⌘⇧T` → tapez → traduction automatique 1,5 s plus tard.
+
+### Raccourcis
+
+| Raccourci | Action |
+|---|---|
+| `⌘⇧T` | Ouvrir/fermer la fenêtre (global) |
+| `⌘⏎` | Traduire immédiatement (mode manuel) |
+
+### Réglages (fenêtre séparée)
+
+⚙️ → **Réglages** ouvre une fenêtre avec barre latérale :
+- **Général** — mode, presse-papiers, épinglage, thème, langue de l'app
+- **Connexion** — modèle principal/secours, déconnexion
+- **Glossaire** — paires de termes
+- **Prompt système** — édition des prompts traduire/affiner
+- **Usage** — tokens et coût
+- **À propos**
+
+## Sécurité
+
+Votre clé API OpenRouter est une donnée facturable, jamais stockée en clair :
+
+- macOS **Keychain** (`com.sayknow.app`)
+- Chiffrement AES-256 dérivé du mot de passe de session macOS
+- Toute autre app qui tente de lire la clé déclenche une invite système
+
+## Licence
+
+[MIT](LICENSE) — voir le [README anglais](README.en.md) pour plus de détails

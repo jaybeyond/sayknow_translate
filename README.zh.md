@@ -1,0 +1,104 @@
+<div align="center">
+
+# SayKnow
+
+**菜单栏 AI 翻译 — 边打字边翻译。**
+
+`say`(说) + `know`(懂) — 一说就懂。
+
+[한국어](README.md) · [English](README.en.md) · [日本語](README.ja.md) · **中文** · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Tiếng Việt](README.vi.md)
+
+[![macOS](https://img.shields.io/badge/macOS-11.0%2B-black?logo=apple)](https://www.apple.com/macos/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## 简介
+
+SayKnow 常驻 **macOS 菜单栏**。一个快捷键打开小窗口,停止输入后自动翻译,无需在翻译网站和当前应用间来回切换复制粘贴。
+
+**OpenRouter BYOK**(自带密钥)架构 — 一个密钥即可使用 OpenRouter 支持的 **所有模型**(目前 360+ 种,GPT-4o、Claude、Gemini、Llama 等)。
+
+## 主要功能
+
+- ⚡ **自动翻译** — 停止输入 1.5 秒后自动调用
+- ⌨️ **手动模式** — 仅在按下 `⌘⏎` 或翻译按钮时调用(节省费用)
+- 🪄 **修订翻译** — 礼貌/随意/更短/商务/直译预设 + 自定义提示词
+- 🌐 **OpenRouter BYOK** — 可搜索 360+ 种模型
+- 🔁 **备用模型** — 主模型失败时 OpenRouter 自动切换
+- ⏹ **停止** — 立即取消进行中的调用
+- 📋 **剪贴板自动获取** — `⌘⇧T` 打开时,其他应用复制的文本自动填入
+- 🕘 **翻译历史** — 可搜索,固定项永久保留
+- 📌 **窗口固定** — 关闭自动隐藏
+- 📚 **术语库**(Glossary)— 公司名、专有名词一致翻译
+- ✏️ **自定义系统提示词**
+- 💰 **用量追踪** — 每日/每月 token 与费用
+- 🌓 **深色/浅色/系统** — 自动跟随系统主题
+- 🌍 **8 种界面语言** — 自动检测系统语言
+- 🔄 **36 种翻译语言**
+- 🔒 **macOS Keychain** — API 密钥 AES-256 加密存储
+
+## 系统要求
+
+- macOS 11.0(Big Sur)或更高版本
+- Apple Silicon(aarch64)
+- OpenRouter API 密钥 — 在 [openrouter.ai/keys](https://openrouter.ai/keys) 获取
+
+## 安装
+
+### 方式 1 — 预编译 DMG(推荐)
+
+1. 从 [Releases](https://github.com/jaybeyond/sayknow_translate/releases) 下载 `SayKnow_x.x.x_aarch64.dmg`
+2. 打开 DMG 将 SayKnow.app 拖入 `/Applications`
+3. 由于未代码签名,首次启动会被 Gatekeeper 拦截:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SayKnow.app
+   ```
+
+### 方式 2 — 从源码构建
+
+```bash
+git clone https://github.com/jaybeyond/sayknow_translate.git
+cd sayknow_translate
+pnpm install
+pnpm tauri build
+```
+
+## 使用方法
+
+1. 菜单栏右侧(时钟旁边)出现小图标(Dock 中不显示)
+2. 点击图标 → 输入 OpenRouter API 密钥 → **连接并开始**
+3. 密钥自动保存到 macOS Keychain
+4. 点击图标或按 `⌘⇧T` 打开 → 输入文本 → 1.5 秒后自动翻译
+
+### 快捷键
+
+| 快捷键 | 操作 |
+|---|---|
+| `⌘⇧T` | 打开/关闭弹窗(全局) |
+| `⌘⏎` | 立即翻译(手动模式) |
+
+### 设置(独立窗口)
+
+点击 ⚙️ → **设置** 打开侧边栏窗口:
+- **常规** — 模式、剪贴板、固定、主题、应用语言
+- **连接** — 主模型/备用模型、登出
+- **术语库** — 术语对照("白엔드팀" → "Backend Team")
+- **系统提示词** — 编辑翻译/修订提示词
+- **用量** — 每日/每月 token 和费用
+- **关于**
+
+## 安全
+
+OpenRouter API 密钥涉及计费,SayKnow 不以明文存储:
+
+- macOS **Keychain**(`com.sayknow.app`)
+- 由 macOS 登录密码派生的密钥进行 AES-256 加密
+- 其他应用读取时会触发系统的允许/拒绝提示
+
+## 许可
+
+[MIT](LICENSE) — 详情见 [English README](README.en.md)

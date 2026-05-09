@@ -1,0 +1,104 @@
+<div align="center">
+
+# SayKnow
+
+**メニューバーに住むAI翻訳 — 入力しながら翻訳します。**
+
+`say`(話す) + `know`(知る) — 言えばすぐに伝わる。
+
+[한국어](README.md) · [English](README.en.md) · **日本語** · [中文](README.zh.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Tiếng Việt](README.vi.md)
+
+[![macOS](https://img.shields.io/badge/macOS-11.0%2B-black?logo=apple)](https://www.apple.com/macos/)
+[![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## 概要
+
+SayKnow は **macOS のメニューバー**に常駐する AI 翻訳ツールです。ショートカット一つでポップアップが開き、タイピングが止まると自動で翻訳します。翻訳サイトと行き来してコピペを繰り返す手間がなくなります。
+
+**OpenRouter BYOK**(自前のキー)構造で、OpenRouter が対応する **すべてのモデル**(GPT-4o、Claude、Gemini、Llama など、現在 360 種類以上)をキー一つで使えます。
+
+## 主な機能
+
+- ⚡ **自動翻訳** — タイピング停止 1.5 秒後に翻訳
+- ⌨️ **手動モード** — `⌘⏎` または翻訳ボタン押下時のみ呼び出し(コスト節約)
+- 🪄 **再翻訳** — 丁寧 / カジュアル / 短く / ビジネス / 直訳 + 自由プロンプト
+- 🌐 **OpenRouter BYOK** — 360 種類以上のモデルを検索可能
+- 🔁 **フォールバックモデル** — メインモデル失敗時に自動切り替え
+- ⏹ **停止** — 進行中の呼び出しを即座に中止
+- 📋 **クリップボード自動取得** — `⌘⇧T` で開く時、他アプリでコピーしたテキストを自動入力
+- 🕘 **翻訳履歴** — 検索可能、ピン留めで永久保存
+- 📌 **ウィンドウのピン留め** — 自動非表示を無効化
+- 📚 **用語集**(Glossary)— 会社名・固有名詞の一貫翻訳
+- ✏️ **システムプロンプトのカスタマイズ**
+- 💰 **使用量トラッキング** — 日次/月次 トークンとコスト
+- 🌓 **ダーク/ライト/システム** — OS テーマ自動追従
+- 🌍 **8 つの UI 言語** — システム言語自動検出
+- 🔄 **36 の翻訳言語**
+- 🔒 **macOS Keychain** — API キー AES-256 暗号化保存
+
+## システム要件
+
+- macOS 11.0(Big Sur)以降
+- Apple Silicon(aarch64)
+- OpenRouter API キー — [openrouter.ai/keys](https://openrouter.ai/keys) で発行
+
+## インストール
+
+### 方法 1 — DMG(推奨)
+
+1. [Releases](https://github.com/jaybeyond/sayknow_translate/releases) から `SayKnow_x.x.x_aarch64.dmg` をダウンロード
+2. DMG を開いて SayKnow.app を `/Applications` にドラッグ
+3. コードサインなしのため、初回起動時に Gatekeeper がブロックしたら:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/SayKnow.app
+   ```
+
+### 方法 2 — ソースからビルド
+
+```bash
+git clone https://github.com/jaybeyond/sayknow_translate.git
+cd sayknow_translate
+pnpm install
+pnpm tauri build
+```
+
+## 使い方
+
+1. メニューバー右側(時計の隣)にアイコンが表示される(Dock には表示されない)
+2. アイコンをクリック → OpenRouter API キーを入力 → **接続して開始**
+3. キーは macOS Keychain に自動保存
+4. アイコンクリックまたは `⌘⇧T` で起動 → テキスト入力 → 1.5 秒後に翻訳
+
+### ショートカット
+
+| キー | 動作 |
+|---|---|
+| `⌘⇧T` | ポップアップの開閉(グローバル) |
+| `⌘⏎` | 即座に翻訳(手動モード) |
+
+### 設定(独立ウィンドウ)
+
+⚙️ → **設定** ボタンで別ウィンドウが開く:
+- **一般** — モード、クリップボード、ピン、テーマ、アプリ言語
+- **接続** — メイン/フォールバックモデル、ログアウト
+- **用語集** — 用語ペア("백엔드팀" → "Backend Team")
+- **システムプロンプト** — 翻訳/再翻訳プロンプト編集
+- **使用量** — 日次/月次 トークン・コスト
+- **情報**
+
+## セキュリティ
+
+OpenRouter API キーは課金が発生する認証情報のため、平文では保存しません。
+
+- macOS **Keychain**(`com.sayknow.app`)
+- macOS ログインパスワードから派生した鍵で AES-256 暗号化
+- 他のアプリが読み取ろうとすると OS が許可/拒否プロンプトを表示
+
+## ライセンス
+
+[MIT](LICENSE) — 詳細は [English README](README.en.md) を参照
