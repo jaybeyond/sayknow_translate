@@ -20,10 +20,15 @@
 
 SayKnow nằm trên **thanh menu macOS**. Một phím tắt mở popup nhỏ; khi bạn ngừng gõ, bản dịch xuất hiện. Không cần chuyển tab giữa trang dịch và copy-paste qua lại nữa.
 
-Kiến trúc **OpenRouter BYOK** (Bring Your Own Key) — một khóa, dùng được **tất cả các model** OpenRouter hỗ trợ (hiện hơn 360: GPT-4o, Claude, Gemini, Llama,...).
+**Ba nhà cung cấp** trong cùng một cửa sổ (OpenRouter / OCP / endpoint tùy chỉnh). Chỉ riêng OpenRouter đã cho phép dùng hơn 360 model (GPT-4o, Claude, Gemini, Llama,...) bằng một khóa duy nhất.
 
 ## Tính năng
 
+- 💬 **Tab Chat** — hỏi-đáp gọn trong cùng cửa sổ, thanh bên đa cuộc trò chuyện, theo từng tin nhắn: tạo lại / chỉnh sửa / sao chép / dừng
+- 🤖 **Đa nhà cung cấp** — OpenRouter / OCP / bất kỳ endpoint nào tương thích OpenAI
+- 📦 **Cài OCP một chạm** — ứng dụng tự chạy `git clone → npm install → setup.mjs`, hiển thị log trực tiếp
+- 📐 **Chế độ ngang gọn** — 720×240 hai cột, phù hợp để mở thường trực
+- 🪟 **Chuyển kích thước cửa sổ** — Gọn ↔ Bình thường ngay tại thanh tiêu đề
 - ⚡ **Tự động dịch** — sau 1.5 giây ngừng gõ
 - ⌨️ **Chế độ thủ công** — chỉ khi nhấn `⌘⏎` hoặc nút Dịch
 - 🪄 **Tinh chỉnh** — Lịch sự / Thân mật / Ngắn / Công sở / Sát nghĩa + prompt tự do

@@ -20,10 +20,15 @@
 
 SayKnow vive en la **barra de menú de macOS**. Un atajo abre una ventana pequeña; cuando dejas de escribir, aparece la traducción. Adiós a saltar entre pestañas y pegar texto.
 
-Arquitectura **OpenRouter BYOK** (Bring Your Own Key) — con una sola clave accedes a **todos los modelos** que OpenRouter soporta (más de 360: GPT-4o, Claude, Gemini, Llama, etc.).
+**Tres proveedores** en la misma ventana (OpenRouter / OCP / endpoint personalizado). Solo con OpenRouter ya tienes acceso a más de 360 modelos (GPT-4o, Claude, Gemini, Llama, etc.) con una única clave.
 
 ## Funciones
 
+- 💬 **Pestaña de chat** — Q&R ligero en la misma ventana, barra lateral multi-conversación, acciones por mensaje: regenerar / editar / copiar / detener
+- 🤖 **Multi-proveedor** — OpenRouter / OCP / cualquier endpoint compatible con OpenAI
+- 📦 **Instalación de OCP con un clic** — la app ejecuta `git clone → npm install → setup.mjs` por ti, con logs en vivo
+- 📐 **Modo compacto horizontal** — 720×240 lado a lado, pensado para tenerlo siempre abierto
+- 🪟 **Cambio de tamaño** — alterna compacto ↔ normal desde la cabecera
 - ⚡ **Traducción automática** — 1,5 s después de parar de escribir
 - ⌨️ **Modo manual** — solo con `⌘⏎` o el botón Traducir (ahorra coste)
 - 🪄 **Refinar** — Formal / Casual / Corto / Negocios / Literal + prompt libre

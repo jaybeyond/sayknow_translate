@@ -20,25 +20,38 @@
 
 SayKnow는 **macOS 메뉴바에 상주**하는 AI 번역기입니다. 단축키 한 번으로 팝업이 뜨고, 타이핑이 멈추면 자동으로 번역해 줍니다. 번역기 사이트를 새 탭으로 띄우고 복사·붙여넣기를 반복하던 작업을 한 화면에서 끊김 없이 처리합니다.
 
-**OpenRouter BYOK (Bring Your Own Key)** 구조로 GPT-4o, Claude, Gemini, Llama 등 OpenRouter가 지원하는 **모든 모델**(현재 360+종)을 키 하나로 사용할 수 있습니다.
+**OpenRouter BYOK (Bring Your Own Key)** + **OCP (Open Claude Proxy)** + **Custom 엔드포인트** — 세 프로바이더 중 골라 쓰며, OpenRouter만으로도 GPT-4o · Claude · Gemini · Llama 등 360+ 모델을 키 하나로 호출할 수 있습니다.
 
 ## 주요 기능
 
+### 번역
 - ⚡ **자동 번역** — 타이핑이 멈추면 1.5초 후 자동 호출
 - ⌨️ **수동 번역** — `⌘⏎` 또는 번역 버튼만 누를 때 호출 (비용 절약)
 - 🪄 **수정 번역 (Refine)** — 정중히·캐주얼·짧게·비즈니스·직역 프리셋 + 자유 프롬프트
-- 🌐 **OpenRouter BYOK** — 360+ 모델 검색 가능한 콤보박스
-- 🔁 **폴백 모델** — 기본 모델 실패 시 OpenRouter가 서버 사이드에서 자동 재시도
 - ⏹ **정지** — 응답 느릴 때 진행 중 호출 즉시 취소
-- 📋 **클립보드 자동 가져오기** — `⌘⇧T`로 열 때 다른 앱에서 복사한 텍스트 자동 채움
-- 🕘 **번역 기록** — 검색 가능, 핀으로 영구 보존
-- 📌 **윈도우 핀** — 자동 숨김 끄기 (긴 글 다듬을 때)
+- 🔄 **36개 번역 언어** — 동·서·북·동유럽, 동남아, 남아시아, 중동, 아프리카
 - 📚 **용어집 (Glossary)** — 회사명·고유명사 일관 번역
 - ✏️ **시스템 프롬프트 커스터마이징** — 번역/수정 프롬프트 직접 편집
+
+### 챗
+- 💬 **챗 탭** — 가벼운 Q&A를 같은 창에서. 멀티 대화 사이드바, 자동 제목 생성
+- ♻️ **재생성 / ✏️ 편집 / 📋 복사 / ⏹ 정지** — 메시지마다 적용 가능
+- 🧠 **모델 공유** — 번역 탭의 기본 모델 그대로 사용
+
+### 프로바이더
+- 🌐 **OpenRouter BYOK** — 360+ 모델 검색 콤보박스, 폴백 모델 자동 재시도
+- 🤖 **OCP (Open Claude Proxy)** — 로컬 Claude CLI를 OpenAI 호환 API로 노출. **한 번 클릭으로 자동 설치** (git clone → npm install → setup.mjs), 실시간 로그 스트리밍
+- 🔧 **Custom 엔드포인트** — 임의의 OpenAI 호환 베이스 URL 등록 (자체 호스팅, vLLM, LM Studio 등)
+
+### 창 / UX
+- 📐 **컴팩트 가로 모드** — 720×240 좌우 분할 레이아웃. 늘 띄워놓고 사용하기에 적합
+- 🪟 **창 크기 토글** — 헤더에서 컴팩트 ↔ 노멀(480×580) 한 번에 전환
+- 📌 **윈도우 핀** — 자동 숨김 끄기 (긴 글 다듬을 때)
+- 📋 **클립보드 자동 가져오기** — `⌘⇧T`로 열 때 다른 앱에서 복사한 텍스트 자동 채움
+- 🕘 **번역 기록** — 검색 가능, 핀으로 영구 보존
 - 💰 **사용량 추적** — 일/월 토큰 + 비용 집계
 - 🌓 **다크/라이트/시스템** 자동 추종
 - 🌍 **8개 UI 언어** — 시스템 언어 자동 감지 (한·영·일·중·스페인·프랑스·독일·베트남)
-- 🔄 **36개 번역 언어** — 동·서·북·동유럽, 동남아, 남아시아, 중동, 아프리카
 - 🔒 **macOS Keychain** — API 키 평문 저장 금지, AES-256 암호화
 
 ## 시스템 요구사항
@@ -155,18 +168,38 @@ pnpm tauri build    # 프로덕션 .app + .dmg
 | 스타일 | Tailwind v4 + shadcn/ui |
 | 아이콘 | Lucide React |
 | 저장 | localStorage + macOS Keychain (`keyring` crate) |
-| Tauri 플러그인 | `positioner`, `global-shortcut`, `clipboard-manager`, `opener`, `log` |
-| 외부 API | OpenRouter |
+| Tauri 플러그인 | `positioner`, `global-shortcut`, `clipboard-manager`, `opener`, `http`, `log` |
+| 외부 API | OpenRouter / OCP (로컬) / 임의 OpenAI 호환 엔드포인트 |
+
+## 최근 업데이트
+
+### 새 기능
+- **챗 탭** — 멀티 대화 + 재생성 / 편집 / 복사 / 정지
+- **멀티 프로바이더** — OpenRouter, OCP, Custom 엔드포인트 한 화면에서 전환
+- **OCP 원터치 설치** — 앱 안에서 `git clone → npm install → node setup.mjs` 자동 실행, 진행 로그 실시간 스트리밍
+- **컴팩트 가로 모드** — 720×240 좌/우 분할 레이아웃, 상시 띄워두기 좋음
+- **창 크기 토글** — 헤더 버튼으로 컴팩트 ↔ 노멀 즉시 전환
+
+### 개선 / 버그 픽스
+- macOS "복원하시겠습니까?" 대화상자 차단 (`NSQuitAlwaysKeepsWindows=false`, `LSUIElement=true`)
+- positioner 트레이 좌표 미캐시 상태에서 `move_window` 호출 시 발생하던 macOS 크래시(`SIGABRT`) 차단
+- 기록을 클릭해 복원할 때 같은 텍스트가 재번역되던 문제 수정
+- 핀 상태에서 본문이 사라지던 애니메이션 회귀 수정
+- 중국어 라벨을 네이티브 표기로(`简体中文 / 繁體中文`)
+- 프로바이더에 따라 API 키 라벨이 동적으로 바뀌도록
+- 8개 로케일의 누락된 43개 키 보충 (총 ~250개 문자열)
+- localhost로 향하는 `fetch`의 CORS 우회를 위해 `tauri-plugin-http` 적용
+- OCP / Claude CLI를 GUI 환경에서도 찾을 수 있도록 `/bin/sh -lc 'command -v ...'` 기반 PATH 해석
 
 ## 로드맵
 
 - [ ] 시스템 전역 텍스트 선택 → 단축키 → 즉시 번역
 - [ ] 즐겨찾는 표현 저장
 - [ ] 시스템 시작 시 자동 실행
-- [ ] Windows 지원
+- [x] Windows 지원 (CI 빌드 추가, QA 진행 중)
 - [ ] Apple 코드사이닝 + 노터라이즈
 - [ ] OCR (스크린샷 영역 번역)
-- [ ] 로컬 LLM (Ollama / LM Studio)
+- [ ] 로컬 LLM 직접 통합 (Ollama / LM Studio)
 - [ ] 모델 추천 / 비교 모드
 
 ## 기여
