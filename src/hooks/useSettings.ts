@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react"
 import { storage } from "@/lib/storage"
 import { secrets } from "@/lib/secrets"
-import type { LangCode } from "@/lib/openrouter"
+import { OPENROUTER_BASE, type LangCode, type ProviderId } from "@/lib/openrouter"
 import type { UILocaleSetting } from "@/i18n"
 
 export type GlossaryTerm = { source: string; target: string }
 
 export type Prefs = {
+  provider: ProviderId
+  /** OpenAI-compatible endpoint base URL (e.g. https://openrouter.ai/api/v1). */
+  baseURL: string
   model: string
   fallbackModel: string
   from: LangCode
@@ -23,9 +26,13 @@ export type Prefs = {
   customTranslatePrompt: string
   /** Optional override for the refine system prompt. Empty = use default. */
   customRefinePrompt: string
+  /** Compact mode shrinks the popover; useful when pinned alongside other apps. */
+  windowMode: "compact" | "normal"
 }
 
 const DEFAULTS: Prefs = {
+  provider: "openrouter",
+  baseURL: OPENROUTER_BASE,
   model: "openai/gpt-4o-mini",
   fallbackModel: "",
   from: "auto",
@@ -37,6 +44,7 @@ const DEFAULTS: Prefs = {
   uiLocale: "system",
   customTranslatePrompt: "",
   customRefinePrompt: "",
+  windowMode: "normal",
 }
 
 const PREFS_KEY = "prefs"
@@ -46,7 +54,13 @@ export type Settings = Prefs & { apiKey: string }
 export function useSettings() {
   const [prefs, setPrefs] = useState<Prefs>(() => {
     const saved = storage.get<Partial<Prefs>>(PREFS_KEY)
-    return { ...DEFAULTS, ...(saved ?? {}) }
+    const merged: Prefs = { ...DEFAULTS, ...(saved ?? {}) }
+    // Migrate retired providers (claude-cli was removed in favor of OCP).
+    if ((merged.provider as string) === "claude-cli") {
+      merged.provider = "openrouter"
+      merged.baseURL = OPENROUTER_BASE
+    }
+    return merged
   })
   const [apiKey, setApiKey] = useState<string>("")
   const [loaded, setLoaded] = useState(false)

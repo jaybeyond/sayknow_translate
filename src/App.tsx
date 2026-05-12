@@ -20,6 +20,9 @@ function MainRoot() {
   const { settings, update, clearKey, isLoggedIn, loaded } = useSettings()
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
   const contentRef = useRef<HTMLDivElement>(null)
+  // Read pin state via ref so the listeners don't need to re-bind every toggle.
+  const pinnedRef = useRef(settings.pinned)
+  pinnedRef.current = settings.pinned
 
   useEffect(() => {
     function play() {
@@ -30,6 +33,10 @@ function MainRoot() {
       el.classList.add("appear")
     }
     function reset() {
+      // When pinned, the window stays visible on blur — don't strip the
+      // `appear` class or the content snaps back to opacity:0 leaving the
+      // user with a blank popover.
+      if (pinnedRef.current) return
       contentRef.current?.classList.remove("appear")
     }
     play()
@@ -40,6 +47,16 @@ function MainRoot() {
       window.removeEventListener("blur", reset)
     }
   }, [])
+
+  // Defensive: if the user pins after the content has already been hidden by
+  // a previous blur, force the content visible again.
+  useEffect(() => {
+    if (!settings.pinned) return
+    const el = contentRef.current
+    if (!el || el.classList.contains("appear")) return
+    void el.offsetWidth
+    el.classList.add("appear")
+  }, [settings.pinned])
 
   return (
     // Outer shell — always rendered with full bg/border/shadow/blur so the

@@ -2,6 +2,8 @@ import { useState } from "react"
 import {
   BookText,
   ExternalLink,
+  Eye,
+  EyeOff,
   Info,
   Languages as LangIcon,
   LogOut,
@@ -12,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -25,6 +28,7 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ModelPicker } from "./ModelPicker"
+import { ProviderPicker } from "./ProviderPicker"
 import { GlossaryEditor } from "./GlossaryEditor"
 import { useModels } from "@/hooks/useModels"
 import { useUsage } from "@/hooks/useUsage"
@@ -34,6 +38,7 @@ import { formatCost, formatTokens } from "@/lib/usage"
 import {
   DEFAULT_REFINE_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
+  PROVIDER_PRESETS,
 } from "@/lib/openrouter"
 import {
   UI_LOCALES,
@@ -69,7 +74,10 @@ export function SettingsWindow({
 }: Props) {
   const { t } = useT(settings.uiLocale)
   const [section, setSection] = useState<Section>("general")
-  const { models, loading: modelsLoading } = useModels(settings.apiKey)
+  const { models, loading: modelsLoading } = useModels(
+    settings.apiKey,
+    settings.baseURL,
+  )
   const { today: usageToday, month: usageMonth, clear: clearUsage } = useUsage()
 
   const NAV: { id: Section; label: string; icon: typeof SettingsIcon }[] = [
@@ -299,9 +307,22 @@ function ConnectionSection({
     <div className="space-y-6">
       <SectionHeader icon={Plug} title={t("settings.section.connection")} />
 
-      <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-        {t("settings.connection.apiKeyShown")}
-      </div>
+      <ProviderPicker
+        provider={settings.provider}
+        baseURL={settings.baseURL}
+        apiKey={settings.apiKey}
+        uiLocale={settings.uiLocale}
+        onChange={(next) => update(next)}
+      />
+
+      <ApiKeyRow
+        provider={settings.provider}
+        apiKey={settings.apiKey}
+        onChange={(v) => update({ apiKey: v })}
+        uiLocale={settings.uiLocale}
+      />
+
+      <Separator />
 
       <Row label={t("settings.model")}>
         <div className="w-full max-w-[400px]">
@@ -313,7 +334,7 @@ function ConnectionSection({
           />
           <p className="mt-1 text-[11px] text-muted-foreground">
             {models.length > 0
-              ? `${models.length} ${t("settings.model.count")}`
+              ? `${models.length} ${t("settings.model.count")} · ${PROVIDER_PRESETS[settings.provider].label}`
               : t("settings.model.loading")}
           </p>
         </div>
@@ -642,5 +663,72 @@ function Row({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
+  )
+}
+
+function ApiKeyRow({
+  provider,
+  apiKey,
+  onChange,
+  uiLocale,
+}: {
+  provider: Settings["provider"]
+  apiKey: string
+  onChange: (next: string) => void
+  uiLocale: Settings["uiLocale"]
+}) {
+  const { t } = useT(uiLocale)
+  const [show, setShow] = useState(false)
+  const [draft, setDraft] = useState(apiKey)
+
+  // Keep the input in sync if the apiKey changes from elsewhere (cross-window).
+  if (apiKey !== draft && document.activeElement?.id !== "settings-api-key") {
+    setDraft(apiKey)
+  }
+
+  const placeholder =
+    provider === "openrouter"
+      ? "sk-or-..."
+      : provider === "ocp"
+        ? "OCP token (leave blank for open mode)"
+        : "API key"
+
+  const label =
+    provider === "openrouter"
+      ? "OpenRouter API Key"
+      : provider === "ocp"
+        ? "OCP Token (optional)"
+        : "API Key"
+
+  return (
+    <Row label={label}>
+      <div className="w-full max-w-[400px]">
+        <div className="relative">
+          <Input
+            id="settings-api-key"
+            type={show ? "text" : "password"}
+            placeholder={placeholder}
+            autoComplete="off"
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              onChange(e.target.value)
+            }}
+            className="pr-9 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label={show ? "hide" : "show"}
+          >
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {t("settings.connection.apiKeyShown")}
+        </p>
+      </div>
+    </Row>
   )
 }

@@ -5,6 +5,8 @@ import {
   Copy,
   CornerDownLeft,
   Loader2,
+  Maximize2,
+  Minimize2,
   Pin,
   PinOff,
   Settings as SettingsIcon,
@@ -71,7 +73,7 @@ export function TranslatePanel({ settings, update }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [refineText, setRefineText] = useState("")
   const abortRef = useRef<AbortController | null>(null)
-  const { models } = useModels(settings.apiKey)
+  const { models } = useModels(settings.apiKey, settings.baseURL)
   const {
     entries: historyEntries,
     add: addHistory,
@@ -82,11 +84,25 @@ export function TranslatePanel({ settings, update }: Props) {
   const { record: recordUsage } = useUsage()
 
   const debounced = useDebounce(input, 1500)
+  // Tracks the source text that produced the currently-shown `output`.
+  // The auto-translate effect uses this to skip re-translating an input
+  // that already has a fresh result (e.g. after restoring from history,
+  // refining, or finishing a manual translate).
+  const lastTranslatedRef = useRef("")
 
   useEffect(() => {
     if (!isTauri()) return
     void invoke("set_pinned", { pinned: settings.pinned }).catch(() => {})
   }, [settings.pinned])
+
+  useEffect(() => {
+    if (!isTauri()) return
+    // Compact = wide & short side-by-side layout, optimized for keep-on-screen.
+    // Normal = tall stacked layout, optimized for longer texts.
+    const [w, h] =
+      settings.windowMode === "compact" ? [720, 240] : [480, 580]
+    void invoke("resize_main_window", { width: w, height: h }).catch(() => {})
+  }, [settings.windowMode])
 
   useEffect(() => {
     if (!isTauri()) return
@@ -117,6 +133,7 @@ export function TranslatePanel({ settings, update }: Props) {
     setError(null)
     chat({
       apiKey: settings.apiKey,
+      baseURL: settings.baseURL,
       model: settings.model,
       fallbackModel: settings.fallbackModel,
       messages: buildTranslatePrompt(
@@ -134,6 +151,7 @@ export function TranslatePanel({ settings, update }: Props) {
       .then((result) => {
         if (ctrl.signal.aborted) return
         setOutput(result.content)
+        lastTranslatedRef.current = trimmed
         addHistory({
           source: trimmed,
           target: result.content,
@@ -173,6 +191,9 @@ export function TranslatePanel({ settings, update }: Props) {
       setError(null)
       return
     }
+    // Skip if this exact input already has a result (e.g. just restored from
+    // history or finished a previous translate).
+    if (text === lastTranslatedRef.current) return
     runTranslate(debounced)
     return () => abortRef.current?.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,6 +210,7 @@ export function TranslatePanel({ settings, update }: Props) {
     if (input.trim().length < 2) {
       setOutput("")
       setError(null)
+      lastTranslatedRef.current = ""
       abortRef.current?.abort()
     }
   }, [input])
@@ -221,6 +243,7 @@ export function TranslatePanel({ settings, update }: Props) {
     try {
       const result = await chat({
         apiKey: settings.apiKey,
+        baseURL: settings.baseURL,
         model: settings.model,
         fallbackModel: settings.fallbackModel,
         messages: buildRefinePrompt(
@@ -272,12 +295,51 @@ export function TranslatePanel({ settings, update }: Props) {
     abortRef.current?.abort()
     setInput(e.source)
     setOutput(e.target)
+    // Mark this input as already-translated so the debounced auto-translate
+    // doesn't fire a redundant call when input settles.
+    lastTranslatedRef.current = e.source.trim()
     setError(null)
+    setTranslating(false)
+    setRefining(false)
     update({ from: e.from, to: e.to })
   }
 
   const targetLang =
     LANGS.find((l) => l.code === settings.to)?.label ?? settings.to
+  const isCompact = settings.windowMode === "compact"
+
+  const targetIndicator =
+    translating || refining ? (
+      <button
+        type="button"
+        onClick={stopTranslate}
+        className="group inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:border-destructive/60 hover:text-destructive"
+        aria-label={t("stop")}
+      >
+        <Loader2 className="h-2.5 w-2.5 animate-spin group-hover:hidden" />
+        <X className="hidden h-2.5 w-2.5 group-hover:inline" />
+        <span>{targetLang}</span>
+        <span className="hidden text-destructive group-hover:inline">{t("stop")}</span>
+      </button>
+    ) : (
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {targetLang}
+      </span>
+    )
+
+  const outputBody = output ? (
+    output
+  ) : translating ? (
+    <span className="text-muted-foreground">{t("output.translating")}</span>
+  ) : input.trim().length < 2 ? (
+    <span className="text-muted-foreground">
+      {settings.autoTranslate
+        ? t("output.emptyAuto")
+        : t("output.emptyManual")}
+    </span>
+  ) : !settings.autoTranslate ? (
+    <span className="text-muted-foreground">{t("output.waitManual")}</span>
+  ) : null
 
   return (
     <div className="flex h-full flex-col">
@@ -311,6 +373,33 @@ export function TranslatePanel({ settings, update }: Props) {
             variant="ghost"
             size="icon"
             className="h-7 w-7"
+            onClick={() =>
+              update({
+                windowMode:
+                  settings.windowMode === "compact" ? "normal" : "compact",
+              })
+            }
+            aria-label={
+              settings.windowMode === "compact"
+                ? t("header.expand")
+                : t("header.compact")
+            }
+            title={
+              settings.windowMode === "compact"
+                ? t("header.expand")
+                : t("header.compact")
+            }
+          >
+            {settings.windowMode === "compact" ? (
+              <Maximize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Minimize2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={() => update({ pinned: !settings.pinned })}
             aria-label={settings.pinned ? t("header.unpin") : t("header.pin")}
             title={settings.pinned ? t("header.pinned") : t("header.pin")}
@@ -333,68 +422,76 @@ export function TranslatePanel({ settings, update }: Props) {
         </div>
       </div>
 
-      <div className="px-3 pt-3">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault()
-              forceTranslate()
-            }
-          }}
-          placeholder={
-            settings.autoTranslate
-              ? t("input.placeholderAuto")
-              : t("input.placeholderManual")
-          }
-          autoFocus
-          className="min-h-[140px] resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-relaxed shadow-none transition-none placeholder:text-muted-foreground/70 focus-visible:border-0 focus-visible:shadow-none focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
-        />
-      </div>
-
-      <div className="flex items-center gap-2 px-3 pb-1.5 pt-1">
-        <Separator className="flex-1" />
-        {translating || refining ? (
-          <button
-            type="button"
-            onClick={stopTranslate}
-            className="group inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground hover:border-destructive/60 hover:text-destructive"
-            aria-label={t("stop")}
-          >
-            <Loader2 className="h-2.5 w-2.5 animate-spin group-hover:hidden" />
-            <X className="hidden h-2.5 w-2.5 group-hover:inline" />
-            <span>{targetLang}</span>
-            <span className="hidden text-destructive group-hover:inline">{t("stop")}</span>
-          </button>
-        ) : (
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {targetLang}
-          </span>
-        )}
-        <Separator className="flex-1" />
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
-        <div
-          className="min-h-[120px] whitespace-pre-wrap text-[14px] leading-relaxed"
-          aria-live="polite"
-        >
-          {output ? (
-            output
-          ) : translating ? (
-            <span className="text-muted-foreground">{t("output.translating")}</span>
-          ) : input.trim().length < 2 ? (
-            <span className="text-muted-foreground">
-              {settings.autoTranslate
-                ? t("output.emptyAuto")
-                : t("output.emptyManual")}
-            </span>
-          ) : !settings.autoTranslate ? (
-            <span className="text-muted-foreground">{t("output.waitManual")}</span>
-          ) : null}
+      {isCompact ? (
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col px-3 py-2">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  forceTranslate()
+                }
+              }}
+              placeholder={
+                settings.autoTranslate
+                  ? t("input.placeholderAuto")
+                  : t("input.placeholderManual")
+              }
+              autoFocus
+              className="min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent p-0 text-[13px] leading-relaxed shadow-none transition-none placeholder:text-muted-foreground/70 focus-visible:border-0 focus-visible:shadow-none focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
+            />
+          </div>
+          <Separator orientation="vertical" />
+          <div className="flex min-w-0 flex-1 flex-col px-3 py-2">
+            <div className="mb-1 flex items-center">{targetIndicator}</div>
+            <div
+              className="flex-1 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed"
+              aria-live="polite"
+            >
+              {outputBody}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="px-3 pt-3">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  forceTranslate()
+                }
+              }}
+              placeholder={
+                settings.autoTranslate
+                  ? t("input.placeholderAuto")
+                  : t("input.placeholderManual")
+              }
+              autoFocus
+              className="min-h-[140px] resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-relaxed shadow-none transition-none placeholder:text-muted-foreground/70 focus-visible:border-0 focus-visible:shadow-none focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 px-3 pb-1.5 pt-1">
+            <Separator className="flex-1" />
+            {targetIndicator}
+            <Separator className="flex-1" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-3 pb-3">
+            <div
+              className="min-h-[120px] whitespace-pre-wrap text-[14px] leading-relaxed"
+              aria-live="polite"
+            >
+              {outputBody}
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="border-t bg-muted/20 px-2 py-1.5">
         <div className="flex flex-wrap items-center gap-1">

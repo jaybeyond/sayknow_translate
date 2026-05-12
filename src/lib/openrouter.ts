@@ -1,4 +1,65 @@
+// Default OpenAI-compatible provider. Any endpoint that speaks the
+// `/chat/completions` and `/models` shape works — OpenRouter, OCP
+// (https://github.com/dtzp555-max/ocp), Ollama, LM Studio, etc.
 export const OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+
+/**
+ * Wrapper around fetch that routes through the Tauri HTTP plugin (Rust) when
+ * running inside the desktop app. The plugin bypasses webview CORS policy —
+ * essential for hitting localhost endpoints like OCP that don't ship the
+ * exact CORS headers needed for `tauri://localhost` origin.
+ */
+async function httpFetch(
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  if (
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+  ) {
+    const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http")
+    return tauriFetch(url, init)
+  }
+  return fetch(url, init)
+}
+export const OCP_BASE = "http://localhost:3456/v1"
+
+export type ProviderId = "openrouter" | "ocp" | "custom"
+
+export const PROVIDER_PRESETS: Record<
+  ProviderId,
+  { label: string; baseURL: string; description: string }
+> = {
+  openrouter: {
+    label: "OpenRouter",
+    baseURL: OPENROUTER_BASE,
+    description: "BYOK · 360+ models with one key",
+  },
+  ocp: {
+    label: "OCP (Claude Pro/Max — fast)",
+    baseURL: OCP_BASE,
+    description: "Persistent local proxy — fastest for frequent calls (auto-translate)",
+  },
+  custom: {
+    label: "Custom",
+    baseURL: "",
+    description: "Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, ...)",
+  },
+}
+
+/** Hardcoded Claude model list used as a fallback when an OCP-style
+ *  endpoint doesn't expose `/v1/models` (or returns empty). */
+export const CLAUDE_CLI_MODELS: OpenRouterModel[] = [
+  { id: "claude-opus-4-5", name: "Claude Opus 4.5" },
+  { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
+  { id: "claude-opus-4-1", name: "Claude Opus 4.1" },
+  { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+]
+
+function trimSlash(s: string): string {
+  return s.endsWith("/") ? s.slice(0, -1) : s
+}
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant"
@@ -7,9 +68,12 @@ export type ChatMessage = {
 
 export type ChatOptions = {
   apiKey: string
+  /** Base URL of the OpenAI-compatible endpoint. Defaults to OpenRouter. */
+  baseURL?: string
   model: string
-  /** Optional fallback model. Sent to OpenRouter as the second item in `models`
-   *  so OpenRouter retries server-side if the primary fails (rate limit / down). */
+  /** Optional fallback model. Sent in the OpenRouter-style `models` array so
+   * the upstream can retry server-side if the primary fails. Endpoints that
+   * don't understand `models` will just ignore the field. */
   fallbackModel?: string
   messages: ChatMessage[]
   signal?: AbortSignal
@@ -24,29 +88,30 @@ export type ChatUsage = {
 
 export type ChatResult = {
   content: string
-  /** The model OpenRouter actually used to fulfill the request. */
+  /** The model the upstream actually used. */
   model: string
   usage?: ChatUsage
 }
 
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
+  const base = trimSlash(opts.baseURL ?? OPENROUTER_BASE)
   const fallback = opts.fallbackModel?.trim()
   const body: Record<string, unknown> = {
     messages: opts.messages,
     temperature: opts.temperature ?? 0.3,
   }
   if (fallback && fallback !== opts.model) {
-    // OpenRouter routes through this list in order on failure.
     body.models = [opts.model, fallback]
   } else {
     body.model = opts.model
   }
 
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+  const res = await httpFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${opts.apiKey}`,
+      // OpenRouter-specific attribution headers. Other providers ignore them.
       "HTTP-Referer": window.location.origin,
       "X-Title": "SayKnow",
     },
@@ -57,7 +122,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   if (!res.ok) {
     const text = await res.text().catch(() => "")
     throw new Error(
-      `OpenRouter ${res.status}: ${text.slice(0, 200) || res.statusText}`,
+      `${res.status}: ${text.slice(0, 200) || res.statusText}`,
     )
   }
 
@@ -75,11 +140,24 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   }
 }
 
-export async function verifyKey(apiKey: string): Promise<boolean> {
-  const res = await fetch(`${OPENROUTER_BASE}/auth/key`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  })
-  return res.ok
+/**
+ * Cross-provider auth check. Hits `/models` with the supplied key — any
+ * 2xx response means the endpoint accepts the key. OpenRouter, OCP, Ollama
+ * (open), and LM Studio all expose this endpoint.
+ */
+export async function verifyKey(
+  apiKey: string,
+  baseURL?: string,
+): Promise<boolean> {
+  const base = trimSlash(baseURL ?? OPENROUTER_BASE)
+  try {
+    const res = await httpFetch(`${base}/models`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
 
 export type OpenRouterModel = {
@@ -89,13 +167,21 @@ export type OpenRouterModel = {
   pricing?: { prompt?: string; completion?: string }
 }
 
-export async function fetchModels(apiKey: string): Promise<OpenRouterModel[]> {
-  const res = await fetch(`${OPENROUTER_BASE}/models`, {
+export async function fetchModels(
+  apiKey: string,
+  baseURL?: string,
+): Promise<OpenRouterModel[]> {
+  const base = trimSlash(baseURL ?? OPENROUTER_BASE)
+  const res = await httpFetch(`${base}/models`, {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   })
   if (!res.ok) throw new Error(`models ${res.status}`)
   const data = (await res.json()) as { data?: OpenRouterModel[] }
-  return data.data ?? []
+  // Normalize: OCP/Ollama may return entries without a friendly `name`.
+  return (data.data ?? []).map((m) => ({
+    ...m,
+    name: m.name ?? m.id,
+  }))
 }
 
 export const LANGS = [
@@ -104,8 +190,8 @@ export const LANGS = [
   { code: "ko", label: "한국어",   english: "Korean",     keywords: "korean ko hangul" },
   { code: "en", label: "English",  english: "English",    keywords: "english en" },
   { code: "ja", label: "日本語",   english: "Japanese",   keywords: "japanese ja nihongo" },
-  { code: "zh", label: "中文 (간체)", english: "Chinese (Simplified)", keywords: "chinese zh mandarin simplified" },
-  { code: "zh-Hant", label: "中文 (번체)", english: "Chinese (Traditional)", keywords: "chinese traditional zh-hant taiwan" },
+  { code: "zh", label: "简体中文", english: "Chinese (Simplified)", keywords: "chinese zh mandarin simplified 简体" },
+  { code: "zh-Hant", label: "繁體中文", english: "Chinese (Traditional)", keywords: "chinese traditional zh-hant taiwan 繁體" },
   // Southeast Asia
   { code: "vi", label: "Tiếng Việt", english: "Vietnamese", keywords: "vietnamese vi" },
   { code: "th", label: "ไทย",      english: "Thai",       keywords: "thai th" },

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,11 +24,41 @@ type Props = {
   uiLocale: UILocaleSetting
 }
 
+/** Returns the language name localized into `targetLocale`, or the code as fallback. */
+function localizedName(code: string, targetLocale: string): string {
+  if (typeof Intl === "undefined" || !Intl.DisplayNames) return code
+  try {
+    return new Intl.DisplayNames([targetLocale], { type: "language" }).of(code) ?? code
+  } catch {
+    return code
+  }
+}
+
 export function LangPicker({ value, onChange, showAuto, uiLocale }: Props) {
-  const { t } = useT(uiLocale)
+  const { t, locale } = useT(uiLocale)
   const [open, setOpen] = useState(false)
   const items = LANGS.filter((l) => showAuto || l.code !== "auto")
+
+  // Pre-compute localized names for the right column. Keyed on the
+  // resolved locale so it updates when the user changes app language.
+  const localized = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const l of items) {
+      if (l.code === "auto") {
+        map[l.code] = t("lang.autoDetect")
+      } else {
+        map[l.code] = localizedName(l.code, locale)
+      }
+    }
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, showAuto])
+
   const current = items.find((l) => l.code === value)
+  const triggerLabel =
+    current?.code === "auto"
+      ? t("lang.autoDetect")
+      : current?.label ?? value
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -39,11 +69,11 @@ export function LangPicker({ value, onChange, showAuto, uiLocale }: Props) {
           aria-expanded={open}
           className="h-7 w-[110px] justify-between bg-transparent px-2 text-xs hover:bg-background data-[state=open]:bg-background"
         >
-          <span className="truncate">{current?.label ?? value}</span>
+          <span className="truncate">{triggerLabel}</span>
           <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[260px] p-0" align="start" sideOffset={4}>
+      <PopoverContent className="w-[280px] p-0" align="start" sideOffset={4}>
         <Command
           filter={(val, search, keywords) => {
             const haystack = (val + " " + (keywords?.join(" ") ?? "")).toLowerCase()
@@ -54,25 +84,30 @@ export function LangPicker({ value, onChange, showAuto, uiLocale }: Props) {
           <CommandList className="max-h-[300px]">
             <CommandEmpty>{t("common.empty")}</CommandEmpty>
             <CommandGroup>
-              {items.map((l) => (
-                <CommandItem
-                  key={l.code}
-                  value={l.code}
-                  keywords={[l.label, l.english, l.keywords]}
-                  onSelect={() => {
-                    onChange(l.code)
-                    setOpen(false)
-                  }}
-                  className="flex items-center justify-between gap-2 py-1.5 text-xs"
-                >
-                  <span className="truncate">{l.label}</span>
-                  {l.label !== l.english && (
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {l.english}
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
+              {items.map((l) => {
+                const left = l.code === "auto" ? t("lang.autoDetect") : l.label
+                const right = localized[l.code]
+                const showRight = right && right !== left
+                return (
+                  <CommandItem
+                    key={l.code}
+                    value={l.code}
+                    keywords={[l.label, l.english, l.keywords, right]}
+                    onSelect={() => {
+                      onChange(l.code)
+                      setOpen(false)
+                    }}
+                    className="flex items-center justify-between gap-2 py-1.5 text-xs"
+                  >
+                    <span className="truncate">{left}</span>
+                    {showRight && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {right}
+                      </span>
+                    )}
+                  </CommandItem>
+                )
+              })}
             </CommandGroup>
           </CommandList>
         </Command>

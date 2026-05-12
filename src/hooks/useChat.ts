@@ -12,11 +12,12 @@ const SYSTEM_PROMPT =
 
 type Args = {
   apiKey: string
+  baseURL: string
   model: string
   fallbackModel?: string
 }
 
-export function useChat({ apiKey, model, fallbackModel }: Args) {
+export function useChat({ apiKey, baseURL, model, fallbackModel }: Args) {
   const [list, setList] = useState<Conversation[]>(() => conversations.list())
   const [currentId, setCurrentId] = useState<string | null>(
     () => conversations.currentId(),
@@ -84,6 +85,7 @@ export function useChat({ apiKey, model, fallbackModel }: Args) {
       try {
         const result = await openrouterChat({
           apiKey,
+          baseURL,
           model,
           fallbackModel,
           messages: apiMessages,
@@ -103,7 +105,7 @@ export function useChat({ apiKey, model, fallbackModel }: Args) {
         if (!ctrl.signal.aborted) setSending(false)
       }
     },
-    [apiKey, model, fallbackModel, refresh],
+    [apiKey, baseURL, model, fallbackModel, refresh],
   )
 
   const send = useCallback(

@@ -55,6 +55,7 @@ export function ChatPanel({ settings, update }: Props) {
     deleteConversation,
   } = useChat({
     apiKey: settings.apiKey,
+    baseURL: settings.baseURL,
     model: settings.model,
     fallbackModel: settings.fallbackModel,
   })

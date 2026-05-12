@@ -13,6 +13,16 @@
     "positioner:default",
     "global-shortcut:default",
     "clipboard-manager:default",
-    "clipboard-manager:allow-read-text"
+    "clipboard-manager:allow-read-text",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://openrouter.ai/**" },
+        { "url": "http://localhost:**" },
+        { "url": "http://127.0.0.1:**" },
+        { "url": "https://*/**" },
+        { "url": "http://*/**" }
+      ]
+    }
   ]
 }
