@@ -1,10 +1,14 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Loader2 } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core"
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow"
 import { useSettings } from "./hooks/useSettings"
 import { useTheme } from "./hooks/useTheme"
+import { useT } from "./i18n"
 import { LoginPanel } from "./components/LoginPanel"
 import { TabbedPanel } from "./components/TabbedPanel"
 import { SettingsWindow } from "./components/SettingsWindow"
+import { isTauri } from "./lib/runtime"
 
 function isSettingsWindow(): boolean {
   if (typeof window === "undefined") return false
@@ -19,10 +23,21 @@ function App() {
 function MainRoot() {
   const { settings, update, clearKey, isLoggedIn, loaded } = useSettings()
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
+  const { t } = useT(settings.uiLocale)
   const contentRef = useRef<HTMLDivElement>(null)
   // Read pin state via ref so the listeners don't need to re-bind every toggle.
   const pinnedRef = useRef(settings.pinned)
   pinnedRef.current = settings.pinned
+
+  // Push the resolved "Quit SayKnow" label to the native tray menu whenever
+  // the UI locale settles. The Rust default is English; this overrides it
+  // for users on any of the other 7 locales.
+  useEffect(() => {
+    if (!isTauri() || !loaded) return
+    const label = t("tray.quit")
+    if (!label) return
+    void invoke("set_tray_quit_label", { label }).catch(() => {})
+  }, [t, loaded])
 
   useEffect(() => {
     function play() {
@@ -90,6 +105,21 @@ function SettingsRoot() {
   const { settings, update, clearKey, loaded } = useSettings()
   const { mode: themeMode, setMode: setThemeMode } = useTheme()
 
+  // Settings window has no logged-out UI of its own; the only visible signal
+  // is the main popover flipping back to LoginPanel. To make logout feel
+  // responsive in *this* window too, close it after the Keychain write +
+  // rev-signal has fully completed.
+  const handleLogout = useCallback(async () => {
+    await clearKey()
+    if (isTauri()) {
+      try {
+        await getCurrentWebviewWindow().close()
+      } catch {
+        /* window already gone */
+      }
+    }
+  }, [clearKey])
+
   if (!loaded) {
     return (
       <div className="flex h-svh items-center justify-center bg-background">
@@ -102,7 +132,7 @@ function SettingsRoot() {
     <SettingsWindow
       settings={settings}
       update={update}
-      onLogout={clearKey}
+      onLogout={handleLogout}
       themeMode={themeMode}
       setThemeMode={setThemeMode}
     />

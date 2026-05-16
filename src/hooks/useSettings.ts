@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { storage } from "@/lib/storage"
-import { secrets } from "@/lib/secrets"
+import { secrets, SECRETS_REV_KEY } from "@/lib/secrets"
 import { OPENROUTER_BASE, type LangCode, type ProviderId } from "@/lib/openrouter"
 import type { UILocaleSetting } from "@/i18n"
 
@@ -60,6 +60,12 @@ export function useSettings() {
       merged.provider = "openrouter"
       merged.baseURL = OPENROUTER_BASE
     }
+    // OCP binds to IPv4 127.0.0.1. On some macOS setups `localhost` is tried
+    // as IPv6 ::1 first, which makes the app think OCP is down even when the
+    // proxy is listening correctly.
+    if (merged.provider === "ocp" && merged.baseURL.includes("localhost:3456")) {
+      merged.baseURL = merged.baseURL.replace("localhost:3456", "127.0.0.1:3456")
+    }
     return merged
   })
   const [apiKey, setApiKey] = useState<string>("")
@@ -76,12 +82,17 @@ export function useSettings() {
     storage.set(PREFS_KEY, prefs)
   }, [prefs])
 
-  // Cross-window sync: settings window writes prefs, main reads on storage event.
+  // Cross-window sync: settings window writes prefs / secrets, main reads on
+  // storage event. The actual API key lives in Keychain — localStorage only
+  // carries a "rev" timestamp that we treat as a signal to re-fetch.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key !== "sayknow:" + PREFS_KEY) return
-      const saved = storage.get<Partial<Prefs>>(PREFS_KEY)
-      if (saved) setPrefs({ ...DEFAULTS, ...saved })
+      if (e.key === "sayknow:" + PREFS_KEY) {
+        const saved = storage.get<Partial<Prefs>>(PREFS_KEY)
+        if (saved) setPrefs({ ...DEFAULTS, ...saved })
+      } else if (e.key === "sayknow:" + SECRETS_REV_KEY) {
+        void secrets.get().then(setApiKey)
+      }
     }
     window.addEventListener("storage", onStorage)
     return () => window.removeEventListener("storage", onStorage)
@@ -100,18 +111,36 @@ export function useSettings() {
     }
   }, [])
 
-  const clearKey = useCallback(() => {
+  const clearKey = useCallback(async () => {
     setApiKey("")
-    void secrets.clear()
+    // Logging out of OCP/Custom only zeroing apiKey isn't enough — those
+    // providers don't require a key (isConnected falls back to baseURL), so
+    // the login screen would never come back up. Reset the provider too.
+    setPrefs((prev) => ({
+      ...prev,
+      provider: "openrouter",
+      baseURL: OPENROUTER_BASE,
+    }))
+    // Awaitable so callers can close the settings window AFTER Keychain delete
+    // and the rev-signal write, otherwise other windows might miss the event.
+    await secrets.clear()
   }, [])
 
   const settings: Settings = { ...prefs, apiKey }
+
+  // OpenRouter always needs a key. OCP / Custom can run in open mode where
+  // /models works unauthenticated — for those we treat a configured baseURL
+  // as "connected" so the user actually reaches TabbedPanel after Connect.
+  const isLoggedIn =
+    prefs.provider === "openrouter"
+      ? apiKey.length > 0
+      : prefs.baseURL.trim().length > 0
 
   return {
     settings,
     update,
     clearKey,
-    isLoggedIn: apiKey.length > 0,
+    isLoggedIn,
     loaded,
   }
 }

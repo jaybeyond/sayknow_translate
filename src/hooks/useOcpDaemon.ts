@@ -7,7 +7,14 @@ export type OcpEnv = {
   ocpPath: string | null
   npmPath: string | null
   claudePath: string | null
+  /** Either system PATH or our private ~/.sayknow-runtime/ binary. */
+  nodePath: string | null
+  /** True only when the private runtime has been downloaded already. */
+  privateNodeAvailable: boolean
   running: boolean
+  /** Port where OCP is actually responding. May differ from 3456 if the user
+   *  (or our fallback) chose a different port. `null` when not running. */
+  runningPort: number | null
 }
 
 export type OcpAction = "idle" | "installing" | "starting" | "stopping"
@@ -16,7 +23,10 @@ type RawEnv = {
   ocp_path: string | null
   npm_path: string | null
   claude_path: string | null
+  node_path: string | null
+  private_node_available: boolean
   running: boolean
+  running_port: number | null
 }
 
 function normalize(raw: RawEnv): OcpEnv {
@@ -24,16 +34,22 @@ function normalize(raw: RawEnv): OcpEnv {
     ocpPath: raw.ocp_path,
     npmPath: raw.npm_path,
     claudePath: raw.claude_path,
+    nodePath: raw.node_path,
+    privateNodeAvailable: raw.private_node_available,
     running: raw.running,
+    runningPort: raw.running_port ?? null,
   }
 }
 
-export function useOcpDaemon(active: boolean) {
+export function useOcpDaemon(active: boolean, baseURL?: string) {
   const [env, setEnv] = useState<OcpEnv>({
     ocpPath: null,
     npmPath: null,
     claudePath: null,
+    nodePath: null,
+    privateNodeAvailable: false,
     running: false,
+    runningPort: null,
   })
   const [action, setAction] = useState<OcpAction>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -45,12 +61,14 @@ export function useOcpDaemon(active: boolean) {
   const refresh = useCallback(async () => {
     if (!isTauri()) return
     try {
-      const raw = await invoke<RawEnv>("detect_ocp_env")
+      // Pass the user's configured baseURL so Rust can scan that port too —
+      // not just the OCP default. Lets us pick up custom-port OCP instances.
+      const raw = await invoke<RawEnv>("detect_ocp_env", { baseUrl: baseURL })
       setEnv(normalize(raw))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [baseURL])
 
   // Initial + periodic poll while the OCP card is active.
   useEffect(() => {
@@ -135,6 +153,24 @@ export function useOcpDaemon(active: boolean) {
     if (env.running) return
     await start()
   }, [env.running, start])
+
+  // Auto-start when the user has already paid the install cost: repo cloned,
+  // node + claude detected, and the daemon currently isn't running. The first
+  // visit (no ocpPath / no claude) still requires an explicit click so the
+  // user consents to the ~80 MB download.
+  const autoStartedRef = useRef(false)
+  useEffect(() => {
+    if (!active || !isTauri()) return
+    if (autoStartedRef.current) return
+    if (env.running) return
+    if (action !== "idle") return
+    // Repo is considered already-installed when ocp CLI / runtime is visible;
+    // we don't require the launchd plist (we no longer create one).
+    const alreadyInstalled = !!env.ocpPath && !!env.claudePath && !!env.nodePath
+    if (!alreadyInstalled) return
+    autoStartedRef.current = true
+    void start()
+  }, [active, env.running, env.ocpPath, env.claudePath, env.nodePath, action, start])
 
   return {
     env,

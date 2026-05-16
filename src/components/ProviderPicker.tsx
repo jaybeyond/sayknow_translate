@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Check, ExternalLink, Loader2, Play, Power, Wrench } from "lucide-react"
+import { Check, Loader2, Play, Power, Wrench } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -14,7 +14,6 @@ import {
   type OcpAction,
   type OcpEnv,
 } from "@/hooks/useOcpDaemon"
-import { openExternal } from "@/lib/runtime"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -51,13 +50,26 @@ export function ProviderPicker({
   }
 
   // OCP lifecycle (install + spawn). Only active while OCP card is selected.
-  const ocp = useOcpDaemon(provider === "ocp")
+  // Pass the current baseURL so Rust can also scan that port (in case the
+  // user runs OCP on a non-default port).
+  const ocp = useOcpDaemon(provider === "ocp", baseURL)
 
   // For OCP we trust the daemon's TCP port check as the single source of
   // truth. OCP's HTTP `/v1/models` can transiently 401/timeout right after
   // launch, which would otherwise show a misleading "not running" badge
   // next to the green "running" panel.
   const ocpPortOpen = provider === "ocp" && ocp.env.running
+
+  // If OCP is actually responding on a non-default port (3457, etc.), keep
+  // baseURL in sync so chat() / verifyKey() hit the right endpoint.
+  useEffect(() => {
+    if (provider !== "ocp") return
+    if (!ocp.env.runningPort) return
+    const expected = `http://127.0.0.1:${ocp.env.runningPort}/v1`
+    if (baseURL !== expected) {
+      onChange({ provider: "ocp", baseURL: expected })
+    }
+  }, [provider, ocp.env.runningPort, baseURL, onChange])
 
   // Probe only providers that are "self-detectable". Skip the HTTP probe
   // for OCP whenever the TCP check already says it's up.
@@ -137,7 +149,7 @@ export function ProviderPicker({
           readOnly={provider !== "custom"}
           placeholder={
             provider === "ocp"
-              ? "http://localhost:3456/v1"
+              ? "http://127.0.0.1:3456/v1"
               : provider === "openrouter"
                 ? "https://openrouter.ai/api/v1"
                 : "https://your-endpoint/v1"
@@ -238,39 +250,11 @@ function OcpControlPanel({
 }) {
   const { t } = useT(uiLocale)
 
-  // Prereq missing — npm or claude. We can't auto-install Node, only guide.
+  // Node / Claude are no longer dead-end blockers — start_ocp now downloads
+  // Node into ~/.sayknow-runtime/ and installs Claude CLI through it if
+  // missing. We just hint at the auto-install in the button label below.
+  const missingNode = !env.nodePath
   const missingClaude = !env.claudePath
-  const missingNpm = !env.npmPath
-
-  if (missingClaude || missingNpm) {
-    return (
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 text-[11px]">
-        <div className="font-medium">{t("ocp.prereq.title")}</div>
-        <ul className="mt-1.5 space-y-1 text-[10px] text-muted-foreground">
-          {missingNpm && (
-            <li className="flex items-center justify-between gap-2">
-              <span>• {t("ocp.prereq.node")}</span>
-              <button
-                type="button"
-                onClick={() => openExternal("https://nodejs.org/")}
-                className="inline-flex items-center gap-1 text-foreground hover:opacity-80"
-              >
-                nodejs.org <ExternalLink className="h-2 w-2" />
-              </button>
-            </li>
-          )}
-          {missingClaude && (
-            <li className="flex items-center justify-between gap-2">
-              <span>• {t("ocp.prereq.claude")}</span>
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                npm i -g @anthropic-ai/claude-code
-              </code>
-            </li>
-          )}
-        </ul>
-      </div>
-    )
-  }
 
   if (env.running) {
     return (
@@ -295,18 +279,23 @@ function OcpControlPanel({
     )
   }
 
-  // Not running. Single "Start OCP" button — start_ocp auto-falls-back to
-  // `npx -y ocp` if no global install, so the user doesn't need to deal with
-  // permission-prone `npm install -g`.
+  // Not running. start_ocp now chains: ensure-Node → ensure-Claude → clone +
+  // install + run. The button label adapts so the user knows roughly how big
+  // a first run will be (~50MB for Node, plus npm + OCP).
   const busy = action !== "idle"
   const needsDownload = !env.ocpPath
+  const willDownloadRuntime = missingNode || missingClaude
   const label = busy
-    ? needsDownload
+    ? willDownloadRuntime
       ? t("ocp.action.installing")
-      : t("ocp.action.starting")
-    : needsDownload
-      ? t("ocp.action.startWithDownload")
-      : t("ocp.action.start")
+      : needsDownload
+        ? t("ocp.action.installing")
+        : t("ocp.action.starting")
+    : willDownloadRuntime
+      ? t("ocp.action.startWithRuntime") || t("ocp.action.startWithDownload")
+      : needsDownload
+        ? t("ocp.action.startWithDownload")
+        : t("ocp.action.start")
 
   return (
     <div className="space-y-2">

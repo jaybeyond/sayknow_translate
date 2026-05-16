@@ -29,6 +29,8 @@ src-tauri/gen/
 
 # OMC / scratch
 .omc/
+.omx/
+data/
 
 # Local env
 .env

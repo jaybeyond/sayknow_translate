@@ -22,7 +22,7 @@ async function httpFetch(
   }
   return fetch(url, init)
 }
-export const OCP_BASE = "http://localhost:3456/v1"
+export const OCP_BASE = "http://127.0.0.1:3456/v1"
 
 export type ProviderId = "openrouter" | "ocp" | "custom"
 
